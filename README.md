@@ -2,7 +2,11 @@
 
 [🇩🇪 Deutsche Version](README_DE.md)
 
-ESP32-based tank level monitoring system using TFmini-S LiDAR sensor and SensESP framework for Signal K integration.
+ESP32-based blackwater tank level monitoring system using TFmini-S LiDAR sensor and SensESP framework for Signal K integration. Designed for marine applications with real-time monitoring, emergency override, and relay control for electric toilet systems.
+
+## Overview
+
+This project provides a complete solution for monitoring blackwater tank levels on boats and RVs. Using a non-contact LiDAR sensor, it accurately measures tank fill levels and integrates seamlessly with Signal K marine data systems. The system includes an LCD display for local monitoring, configurable alarms, and an emergency override feature for critical situations.
 
 ## Features
 
@@ -11,16 +15,21 @@ ESP32-based tank level monitoring system using TFmini-S LiDAR sensor and SensESP
 - **LCD display** (16x2 I2C) showing fill level and volume
 - **Configurable alarm** with adjustable threshold
 - **Emergency operation mode** with manual override
-- **Relay control** for pump or valve automation
+- **Relay control** for electric toilet system automation
 - **Real-time monitoring** of tank level, volume, and capacity
+- **Web-based configuration** interface for easy setup
+- **WiFi connectivity** with mDNS support
+- **Robust error handling** and automatic recovery
 
 ## Hardware Requirements
 
-- ESP32 board (Wemos D1 Mini ESP32 or compatible)
-- TFmini-S LiDAR sensor
-- 16x2 LCD with PCF8574 I2C backpack (address 0x27)
-- Alarm output device (LED, buzzer, relay, etc.)
-- 5V power supply
+- **ESP32 board** - Wemos D1 Mini ESP32 or compatible (ESP32-WROOM-32)
+- **TFmini-S LiDAR sensor** - Non-contact distance measurement (30-1200cm range)
+- **16x2 LCD display** - With PCF8574 I2C backpack (I2C address 0x27)
+- **Relay module** - For controlling electric toilet or pump (optional)
+- **Alarm device** - LED, buzzer, or external alarm system (optional)
+- **5V power supply** - Minimum 2A recommended for stable operation
+- **Enclosure** - Waterproof housing recommended for marine environments
 
 ## Pin Configuration
 
@@ -73,24 +82,38 @@ The system publishes to the following Signal K paths:
 
 ## Configuration
 
+### Tank Parameters
+
+The default tank configuration in the code:
+```cpp
+float length_cm = 50.0f;   // Tank length in centimeters
+float width_cm = 72.0f;    // Tank width in centimeters
+float height_cm = 87.0f;   // Tank height in centimeters
+float sensor_offset_cm = 5.0f;  // Distance from sensor to tank top
+int alarm_threshold_percent = 80;  // Alarm triggers at 80% full
+```
+
+Modify these values in `src/main.cpp` to match your tank dimensions.
+
 ### Initial WiFi Setup
 
 On first boot, the ESP32 creates a WiFi access point:
-- SSID: `SensESP-blackwater-tank`
-- Connect to this network and configure your WiFi credentials
+- **SSID:** `SensESP-blackwater-tank`
+- **Password:** Check serial monitor or SensESP documentation
+- Connect to this network and configure your WiFi credentials through the captive portal
 
 ### Web Configuration
 
-Access the configuration interface at:
-- `http://blackwater-tank.local/config` (mDNS)
-- Or use the IP address shown on the LCD/serial monitor
+After WiFi is configured, access the web interface:
+- **mDNS:** `http://blackwater-tank.local/config`
+- **Direct IP:** Check LCD display or serial monitor for IP address
 
-Configure the following parameters:
-- **Tank Length** (cm)
-- **Tank Width** (cm)
-- **Tank Height** (cm)
-- **Sensor Offset** (cm) - Distance from sensor mounting to tank top
-- **Alarm Threshold** (%) - Percentage at which alarm activates
+The web interface provides:
+- Real-time tank level visualization
+- Signal K connection status
+- System information and diagnostics
+- Network configuration
+- Firmware update capability
 
 ### Signal K Server
 
@@ -182,6 +205,25 @@ Mount the sensor above the tank opening, pointing downward:
 - Verify alarm threshold setting
 - Test with multimeter or LED
 
+## Technical Details
+
+### System Architecture
+
+The system operates on a 200ms update cycle:
+1. Read distance from TFmini-S LiDAR sensor via UART
+2. Calculate fill level, percentage, and volume
+3. Update LCD display with current values
+4. Check alarm conditions and emergency mode
+5. Publish data to Signal K server
+6. Process SensESP event loop
+
+### Communication Protocols
+
+- **UART:** TFmini-S LiDAR (115200 baud, 8N1)
+- **I2C:** LCD display (100kHz, address 0x27)
+- **WiFi:** 802.11 b/g/n (2.4GHz)
+- **Signal K:** WebSocket over HTTP (default port 3000)
+
 ## Development
 
 ### Project Structure
@@ -190,8 +232,11 @@ Mount the sensor above the tank opening, pointing downward:
 ├── platformio.ini          # PlatformIO configuration
 ├── src/
 │   └── main.cpp           # Main application code
-├── include/               # Header files (if needed)
-└── lib/                   # Custom libraries (if needed)
+├── include/               # Header files
+├── lib/                   # Custom libraries
+├── DOCUMENTATION_INDEX.md  # Documentation overview
+├── EMERGENCY_MODE_LOGIC.md # Emergency mode details
+└── config_example.h       # Configuration template
 ```
 
 ### Dependencies
@@ -200,9 +245,21 @@ Mount the sensor above the tank opening, pointing downward:
 - [LiquidCrystal_PCF8574](https://github.com/mathertel/LiquidCrystal_PCF8574) v2.2.0+
 - [ArduinoJson](https://arduinojson.org/) v7.0.0+
 
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+
 ## License
 
 This project is open source. Check individual library licenses for dependencies.
+
+## Author
+
+Created by Stefan Blohm (Blohminator)
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and updates.
 
 ## References
 
