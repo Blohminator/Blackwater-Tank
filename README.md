@@ -1,5 +1,7 @@
 # Blackwater Tank Level Monitor
 
+[🇩🇪 Deutsche Version](README_DE.md)
+
 ESP32-based tank level monitoring system using TFmini-S LiDAR sensor and SensESP framework for Signal K integration.
 
 ## Features
@@ -49,15 +51,23 @@ The system publishes to the following Signal K paths:
 
 ### Steps
 
-1. Clone or download this repository
-2. Open the project in PlatformIO (VS Code or CLI)
-3. Connect your ESP32 board via USB
-4. Build and upload:
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/Blohminator/Blackwater-Tank.git
+   cd Blackwater-Tank
    ```
+
+2. Open the project in PlatformIO (VS Code or CLI)
+
+3. Connect your ESP32 board via USB
+
+4. Build and upload:
+   ```bash
    pio run -t upload
    ```
+
 5. Monitor serial output:
-   ```
+   ```bash
    pio device monitor
    ```
 
@@ -133,11 +143,7 @@ When BOTH conditions are met:
 - Serial: Logs emergency activation
 
 **Exit Emergency Mode:**
-When EITHER condition is met:
-1. Fill level drops below threshold, OR
-2. Alarm input (GPIO 19) is opened (disconnected)
-
-The system automatically returns to normal operation.
+When the alarm input (GPIO 19) is opened (disconnected), the system automatically returns to normal operation.
 
 ## TFmini-S LiDAR
 
@@ -208,5 +214,6 @@ This project is open source. Check individual library licenses for dependencies.
 ## Support
 
 For issues and questions:
+- Open an issue on [GitHub](https://github.com/Blohminator/Blackwater-Tank/issues)
 - SensESP: [GitHub Issues](https://github.com/SignalK/SensESP/issues)
 - Signal K: [Community Forum](https://github.com/SignalK/signalk-server/discussions)
