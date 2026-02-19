@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../BlackWater_Tank_Lidar_withRelay - Kopie"
+		},
+		{
+			"name": "LCD TEST",
+			"path": "../../LCD TEST"
+		},
+		{
+			"name": "BlackWater_Tank_Lidar_withRelay_SENS_SETUP",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}
