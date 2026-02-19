@@ -179,9 +179,20 @@ The TFmini-S sensor measures distance using UART communication:
 ### Mounting
 
 Mount the sensor above the tank opening, pointing downward:
-1. Ensure clear line of sight to liquid surface
+
+⚠️ **IMPORTANT: Moisture Protection Required!**
+- The LiDAR sensor must NOT come into direct contact with water or moisture
+- Install a protective glass or clear plastic barrier between the sensor and tank opening
+- Use transparent materials (glass, acrylic, polycarbonate) that allow laser light to pass through
+- Ensure the protective barrier is clean and free of condensation for accurate readings
+- Seal the sensor housing to prevent humidity and gases from entering
+
+Additional mounting guidelines:
+1. Ensure clear line of sight to liquid surface through the protective barrier
 2. Avoid foam or turbulent surfaces for best accuracy
-3. Set the **Sensor Offset** parameter to account for mounting distance
+3. Mount the protective barrier at an angle to prevent condensation buildup
+4. Set the **Sensor Offset** parameter to account for mounting distance and barrier thickness
+5. Regular cleaning of the protective barrier maintains measurement accuracy
 
 ## Troubleshooting
 
@@ -189,6 +200,15 @@ Mount the sensor above the tank opening, pointing downward:
 - Check UART wiring (RX/TX may be swapped)
 - Verify TFmini-S power supply (5V)
 - Monitor serial output for frame errors
+- **Check protective barrier:** Ensure glass/plastic barrier is clean and transparent
+- **Moisture damage:** If sensor was exposed to water, it may be permanently damaged
+
+### Inaccurate or fluctuating readings
+- Clean the protective glass/plastic barrier
+- Check for condensation on the protective barrier
+- Verify sensor is mounted perpendicular to liquid surface
+- Ensure protective barrier material is suitable (clear glass or acrylic recommended)
+- Adjust sensor offset parameter if barrier thickness changed
 
 ### LCD not displaying
 - Verify I2C address (default 0x27, some use 0x3F)
