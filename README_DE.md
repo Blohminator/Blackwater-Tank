@@ -2,25 +2,34 @@
 
 [🇬🇧 English Version](README.md)
 
-ESP32-basiertes Tank-Füllstandsüberwachungssystem mit TFmini-S LiDAR-Sensor und SensESP-Framework für Signal K Integration.
+ESP32-basiertes Blackwater-Tank-Füllstandsüberwachungssystem mit TFmini-S LiDAR-Sensor und SensESP-Framework für Signal K Integration. Entwickelt für maritime Anwendungen mit Echtzeit-Überwachung, Notfall-Override und Relaissteuerung für elektrische Toilettensysteme.
+
+## Überblick
+
+Dieses Projekt bietet eine komplette Lösung zur Überwachung von Blackwater-Tankfüllständen auf Booten und Wohnmobilen. Mit einem berührungslosen LiDAR-Sensor misst es präzise Tankfüllstände und integriert sich nahtlos in Signal K Marine-Datensysteme. Das System umfasst ein OLED-Display für lokale Überwachung, konfigurierbare Alarme und eine Notfall-Override-Funktion für kritische Situationen.
 
 ## Funktionen
 
 - **TFmini-S LiDAR-Sensor** für berührungslose Distanzmessung
 - **Signal K Integration** über SensESP v3 Framework
-- **LCD-Display** (16x2 I2C) zeigt Füllstand und Volumen an
+- **SH1106 OLED-Display** (128x64 I2C) zeigt Füllstand, Volumen und Fortschrittsbalken an
 - **Konfigurierbarer Alarm** mit einstellbarem Schwellwert
 - **Notbetriebsmodus** mit manueller Überbrückung
-- **Relaissteuerung** für Pumpen- oder Ventilautomatisierung
+- **Relaissteuerung** für elektrische Toilettensystem-Automatisierung
 - **Echtzeit-Überwachung** von Tankfüllstand, Volumen und Kapazität
+- **Webbasierte Konfiguration** für einfache Einrichtung
+- **WiFi-Konnektivität** mit mDNS-Unterstützung
+- **Robuste Fehlerbehandlung** und automatische Wiederherstellung
 
 ## Hardware-Anforderungen
 
-- ESP32 Board (Wemos D1 Mini ESP32 oder kompatibel)
-- TFmini-S LiDAR-Sensor
-- 16x2 LCD mit PCF8574 I2C-Backpack (Adresse 0x27)
-- Alarmausgabegerät (LED, Summer, Relais, etc.)
-- 5V Stromversorgung
+- **ESP32 Board** - Wemos D1 Mini ESP32 oder kompatibel (ESP32-WROOM-32)
+- **TFmini-S LiDAR-Sensor** - Berührungslose Distanzmessung (30-1200cm Reichweite)
+- **SH1106 OLED-Display** - 128x64 Pixel, I2C (Adresse 0x3C)
+- **Relaismodul** - Zur Steuerung elektrischer Toilette oder Pumpe (optional)
+- **Alarmgerät** - LED, Summer oder externes Alarmsystem (optional)
+- **5V Stromversorgung** - Mindestens 2A empfohlen für stabilen Betrieb
+- **Gehäuse** - Wasserdichtes Gehäuse empfohlen für maritime Umgebungen
 
 ## Pin-Konfiguration
 
@@ -28,8 +37,8 @@ ESP32-basiertes Tank-Füllstandsüberwachungssystem mit TFmini-S LiDAR-Sensor un
 |-----------|-----------|-------------|
 | LiDAR RX | GPIO 16 | Empfängt Daten von TFmini-S TX |
 | LiDAR TX | GPIO 17 | Sendet Befehle an TFmini-S RX |
-| LCD SDA | GPIO 21 | I2C Datenleitung |
-| LCD SCL | GPIO 22 | I2C Taktleitung |
+| OLED SDA | GPIO 21 | I2C Datenleitung |
+| OLED SCL | GPIO 22 | I2C Taktleitung |
 | Alarmausgang | GPIO 23 | Alarmausgang (HIGH bei Schwellwertüberschreitung) |
 | Alarmeingang | GPIO 19 | Notfall-Alarmeingang (aktiv LOW, interner Pull-up) |
 | Relaisausgang | GPIO 18 | Relaissteuerung (HIGH=EIN im Normalbetrieb, LOW=AUS im Notfall) |
@@ -73,24 +82,38 @@ Das System veröffentlicht auf folgenden Signal K Pfaden:
 
 ## Konfiguration
 
+### Tank-Parameter
+
+Die Standard-Tankkonfiguration im Code:
+```cpp
+float length_cm = 50.0f;   // Tanklänge in Zentimetern
+float width_cm = 72.0f;    // Tankbreite in Zentimetern
+float height_cm = 87.0f;   // Tankhöhe in Zentimetern
+float sensor_offset_cm = 5.0f;  // Abstand vom Sensor zur Tankoberseite
+int alarm_threshold_percent = 80;  // Alarm wird bei 80% Füllstand ausgelöst
+```
+
+Passen Sie diese Werte in `src/main.cpp` an Ihre Tankabmessungen an.
+
 ### Initiale WiFi-Einrichtung
 
 Beim ersten Start erstellt der ESP32 einen WiFi-Access-Point:
-- SSID: `SensESP-blackwater-tank`
-- Mit diesem Netzwerk verbinden und WiFi-Zugangsdaten konfigurieren
+- **SSID:** `SensESP-blackwater-tank`
+- **Passwort:** Siehe seriellen Monitor oder SensESP-Dokumentation
+- Mit diesem Netzwerk verbinden und WiFi-Zugangsdaten über das Captive Portal konfigurieren
 
 ### Web-Konfiguration
 
-Zugriff auf die Konfigurationsoberfläche unter:
-- `http://blackwater-tank.local/config` (mDNS)
-- Oder die auf dem LCD/seriellen Monitor angezeigte IP-Adresse verwenden
+Nach der WiFi-Konfiguration auf die Web-Oberfläche zugreifen:
+- **mDNS:** `http://blackwater-tank.local/config`
+- **Direkte IP:** Siehe OLED-Display oder seriellen Monitor für IP-Adresse
 
-Folgende Parameter konfigurieren:
-- **Tanklänge** (cm)
-- **Tankbreite** (cm)
-- **Tankhöhe** (cm)
-- **Sensor-Offset** (cm) - Abstand von Sensormontage zur Tankoberseite
-- **Alarmschwelle** (%) - Prozentsatz, bei dem der Alarm aktiviert wird
+Die Web-Oberfläche bietet:
+- Echtzeit-Tankfüllstand-Visualisierung
+- Signal K Verbindungsstatus
+- Systeminformationen und Diagnose
+- Netzwerkkonfiguration
+- Firmware-Update-Funktion
 
 ### Signal K Server
 
@@ -102,25 +125,21 @@ builder
   .get_app();
 ```
 
-## LCD-Anzeige
+## OLED-Anzeige
 
-Das LCD zeigt Echtzeitinformationen in zwei Modi:
+Das OLED zeigt Echtzeitinformationen in zwei Modi:
 
 ### Normalmodus
-**Zeile 1:** `Fill:XXcm YYY%`
+- Großer Füllprozentsatz (z.B. `75%`)
 - Füllhöhe in Zentimetern
-- Füllprozentsatz (0-100%)
-
-**Zeile 2:** `Vol:XXXXXXL`
 - Aktuelles Volumen in Litern
+- Fortschrittsbalken am unteren Bildschirmrand
 
 ### Notfallmodus
-**Zeile 1:** `Fill:XXcm YYY%`
+- `!! EMERGENCY MODE !!` Warnungsheader
+- Großer Füllprozentsatz
 - Füllhöhe in Zentimetern
-- Füllprozentsatz (0-100%)
-
-**Zeile 2:** `EMERGENCY MODE`
-- Zeigt an, dass der Notbetrieb aktiv ist
+- Fortschrittsbalken am unteren Bildschirmrand
 
 ## Notbetrieb
 
@@ -156,21 +175,41 @@ Der TFmini-S Sensor misst die Entfernung über UART-Kommunikation:
 ### Montage
 
 Sensor über der Tanköffnung montieren, nach unten zeigend:
-1. Freie Sichtlinie zur Flüssigkeitsoberfläche sicherstellen
+
+⚠️ **WICHTIG: Feuchtigkeitsschutz erforderlich!**
+- Der LiDAR-Sensor darf NICHT in direkten Kontakt mit Wasser oder Feuchtigkeit kommen
+- Installieren Sie eine schützende Glas- oder transparente Kunststoffbarriere zwischen Sensor und Tanköffnung
+- Verwenden Sie transparente Materialien (Glas, Acryl, Polycarbonat), die Laserlicht durchlassen
+- Stellen Sie sicher, dass die Schutzbarriere sauber und frei von Kondenswasser ist für genaue Messungen
+- Dichten Sie das Sensorgehäuse ab, um das Eindringen von Feuchtigkeit und Gasen zu verhindern
+
+Zusätzliche Montagehinweise:
+1. Freie Sichtlinie zur Flüssigkeitsoberfläche durch die Schutzbarriere sicherstellen
 2. Schaum oder turbulente Oberflächen für beste Genauigkeit vermeiden
-3. **Sensor-Offset** Parameter einstellen, um Montageabstand zu berücksichtigen
+3. Schutzbarriere schräg montieren, um Kondensationsbildung zu verhindern
+4. **Sensor-Offset** Parameter einstellen, um Montageabstand und Barrierendicke zu berücksichtigen
+5. Regelmäßige Reinigung der Schutzbarriere erhält die Messgenauigkeit
 
 ## Fehlerbehebung
+
+### OLED zeigt nichts an
+- I2C-Adresse überprüfen (Standard 0x3C, manche verwenden 0x3D)
+- I2C-Verkabelung prüfen (SDA/SCL)
+- Mit I2C-Scanner-Sketch testen
 
 ### Keine LiDAR-Messwerte
 - UART-Verkabelung prüfen (RX/TX könnten vertauscht sein)
 - TFmini-S Stromversorgung überprüfen (5V)
 - Serielle Ausgabe auf Frame-Fehler überwachen
+- **Schutzbarriere prüfen:** Sicherstellen, dass Glas-/Kunststoffbarriere sauber und transparent ist
+- **Feuchtigkeitsschaden:** Wenn Sensor Wasser ausgesetzt war, kann er dauerhaft beschädigt sein
 
-### LCD zeigt nichts an
-- I2C-Adresse überprüfen (Standard 0x27, manche verwenden 0x3F)
-- I2C-Verkabelung prüfen (SDA/SCL)
-- Mit I2C-Scanner-Sketch testen
+### Ungenaue oder schwankende Messwerte
+- Schutzglas-/Kunststoffbarriere reinigen
+- Auf Kondenswasser an der Schutzbarriere prüfen
+- Überprüfen, dass Sensor senkrecht zur Flüssigkeitsoberfläche montiert ist
+- Sicherstellen, dass Barrierenmaterial geeignet ist (klares Glas oder Acryl empfohlen)
+- Sensor-Offset-Parameter anpassen, wenn sich Barrierendicke geändert hat
 
 ### Signal K verbindet nicht
 - WiFi-Verbindung überprüfen
@@ -182,6 +221,25 @@ Sensor über der Tanköffnung montieren, nach unten zeigend:
 - Alarmschwellen-Einstellung überprüfen
 - Mit Multimeter oder LED testen
 
+## Technische Details
+
+### Systemarchitektur
+
+Das System arbeitet mit einem 200ms Update-Zyklus:
+1. Distanz vom TFmini-S LiDAR-Sensor über UART auslesen
+2. Füllstand, Prozentsatz und Volumen berechnen
+3. OLED-Display mit aktuellen Werten aktualisieren
+4. Alarmbedingungen und Notfallmodus prüfen
+5. Daten an Signal K Server senden
+6. SensESP Event-Loop verarbeiten
+
+### Kommunikationsprotokolle
+
+- **UART:** TFmini-S LiDAR (115200 Baud, 8N1)
+- **I2C:** OLED-Display (100kHz, Adresse 0x3C)
+- **WiFi:** 802.11 b/g/n (2.4GHz)
+- **Signal K:** WebSocket über HTTP (Standard-Port 3000)
+
 ## Entwicklung
 
 ### Projektstruktur
@@ -190,19 +248,35 @@ Sensor über der Tanköffnung montieren, nach unten zeigend:
 ├── platformio.ini          # PlatformIO-Konfiguration
 ├── src/
 │   └── main.cpp           # Hauptanwendungscode
-├── include/               # Header-Dateien (falls benötigt)
-└── lib/                   # Eigene Bibliotheken (falls benötigt)
+├── include/               # Header-Dateien
+├── lib/                   # Eigene Bibliotheken
+├── DOCUMENTATION_INDEX.md  # Dokumentationsübersicht
+├── EMERGENCY_MODE_LOGIC.md # Notfallmodus-Details
+└── config_example.h       # Konfigurationsvorlage
 ```
 
 ### Abhängigkeiten
 
 - [SensESP](https://github.com/SignalK/SensESP) v3.2.0+
-- [LiquidCrystal_PCF8574](https://github.com/mathertel/LiquidCrystal_PCF8574) v2.2.0+
+- [Adafruit SH110X](https://github.com/adafruit/Adafruit_SH110x) v2.1.10+
+- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) v1.11.9+
 - [ArduinoJson](https://arduinojson.org/) v7.0.0+
+
+## Mitwirken
+
+Beiträge sind willkommen! Bitte zögern Sie nicht, Pull Requests einzureichen oder Issues für Bugs und Feature-Anfragen zu öffnen.
 
 ## Lizenz
 
 Dieses Projekt ist Open Source. Prüfen Sie die individuellen Bibliothekslizenzen für Abhängigkeiten.
+
+## Autor
+
+Erstellt von Stefan Blohm (Blohminator)
+
+## Changelog
+
+Siehe [CHANGELOG.md](CHANGELOG.md) für Versionsverlauf und Updates.
 
 ## Referenzen
 

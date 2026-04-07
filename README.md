@@ -12,7 +12,7 @@ This project provides a complete solution for monitoring blackwater tank levels 
 
 - **TFmini-S LiDAR sensor** for non-contact distance measurement
 - **Signal K integration** via SensESP v3 framework
-- **LCD display** (16x2 I2C) showing fill level and volume
+- **SH1106 OLED display** (128x64 I2C) showing fill level, volume and progress bar
 - **Configurable alarm** with adjustable threshold
 - **Emergency operation mode** with manual override
 - **Relay control** for electric toilet system automation
@@ -25,7 +25,7 @@ This project provides a complete solution for monitoring blackwater tank levels 
 
 - **ESP32 board** - Wemos D1 Mini ESP32 or compatible (ESP32-WROOM-32)
 - **TFmini-S LiDAR sensor** - Non-contact distance measurement (30-1200cm range)
-- **16x2 LCD display** - With PCF8574 I2C backpack (I2C address 0x27)
+- **SH1106 OLED display** - 128x64 pixels, I2C (address 0x3C)
 - **Relay module** - For controlling electric toilet or pump (optional)
 - **Alarm device** - LED, buzzer, or external alarm system (optional)
 - **5V power supply** - Minimum 2A recommended for stable operation
@@ -37,8 +37,8 @@ This project provides a complete solution for monitoring blackwater tank levels 
 |-----------|-----------|-------------|
 | LiDAR RX | GPIO 16 | Receives data from TFmini-S TX |
 | LiDAR TX | GPIO 17 | Sends commands to TFmini-S RX |
-| LCD SDA | GPIO 21 | I2C data line |
-| LCD SCL | GPIO 22 | I2C clock line |
+| OLED SDA | GPIO 21 | I2C data line |
+| OLED SCL | GPIO 22 | I2C clock line |
 | Alarm Output | GPIO 23 | Alarm output (HIGH when threshold exceeded) |
 | Alarm Input | GPIO 19 | Emergency alarm input (active LOW, internal pull-up) |
 | Relay Output | GPIO 18 | Relay control (HIGH=ON in normal mode, LOW=OFF in emergency) |
@@ -130,20 +130,16 @@ builder
 The LCD shows real-time information in two modes:
 
 ### Normal Mode
-**Line 1:** `Fill:XXcm YYY%`
+- Large fill percentage (e.g. `75%`)
 - Fill height in centimeters
-- Fill percentage (0-100%)
-
-**Line 2:** `Vol:XXXXXXL`
 - Current volume in liters
+- Progress bar at the bottom of the screen
 
 ### Emergency Mode
-**Line 1:** `Fill:XXcm YYY%`
+- `!! EMERGENCY MODE !!` warning header
+- Large fill percentage
 - Fill height in centimeters
-- Fill percentage (0-100%)
-
-**Line 2:** `EMERGENCY MODE`
-- Indicates emergency operation is active
+- Progress bar at the bottom of the screen
 
 ## Emergency Operation
 
@@ -211,7 +207,7 @@ Additional mounting guidelines:
 - Adjust sensor offset parameter if barrier thickness changed
 
 ### LCD not displaying
-- Verify I2C address (default 0x27, some use 0x3F)
+- Verify I2C address (default 0x3C, some use 0x3D)
 - Check I2C wiring (SDA/SCL)
 - Test with I2C scanner sketch
 
@@ -262,7 +258,8 @@ The system operates on a 200ms update cycle:
 ### Dependencies
 
 - [SensESP](https://github.com/SignalK/SensESP) v3.2.0+
-- [LiquidCrystal_PCF8574](https://github.com/mathertel/LiquidCrystal_PCF8574) v2.2.0+
+- [Adafruit SH110X](https://github.com/adafruit/Adafruit_SH110x) v2.1.10+
+- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) v1.11.9+
 - [ArduinoJson](https://arduinojson.org/) v7.0.0+
 
 ## Contributing

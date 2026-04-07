@@ -2,14 +2,15 @@
 Blackwater Tank Level Monitor
 ESP32 + TFmini-S LiDAR + SensESP v3
 Signal K: tanks.blackWater.0.*
-LCD display + configurable alarm
+SH1106 OLED display + configurable alarm
 Web-UI: /config
 ============================================*/
 
 #include <Arduino.h>
 #include <memory>
 #include <Wire.h>
-#include <LiquidCrystal_PCF8574.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
 #include <HardwareSerial.h>
 #include <ArduinoJson.h>
 
@@ -25,7 +26,9 @@ using namespace sensesp;
 #define ALARM_PIN 23         // Alarm output pin
 #define ALARM_INPUT_PIN 19   // Emergency alarm input (active LOW when closed)
 #define RELAY_PIN 18         // Relay control output
-#define LCD_I2C_ADDR 0x27    // Freenove 1602 I2C address
+#define OLED_I2C_ADDR 0x3C   // SH1106 OLED I2C address (0x3C or 0x3D)
+#define OLED_WIDTH 128       // OLED display width in pixels
+#define OLED_HEIGHT 64       // OLED display height in pixels
 #define I2C_SDA 21           // I2C data pin
 #define I2C_SCL 22           // I2C clock pin
 
@@ -33,8 +36,8 @@ using namespace sensesp;
 const int TFMINI_HEADER = 0x59;
 const int TFMINI_FRAME_SIZE = 9;
 
-// ===== LCD Instance =====
-LiquidCrystal_PCF8574 lcd(LCD_I2C_ADDR);
+// ===== OLED Instance =====
+Adafruit_SH1106G oled(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 
 // ===== Tank Configuration Structure =====
 struct TankConfig {
@@ -69,16 +72,18 @@ bool emergency_mode = false;  // Emergency operation mode flag
 // ===== Function Prototypes =====
 int read_tfmini_distance();
 void compute_fill_level(int distance_cm);
-void update_lcd_display();
+void update_oled_display();
 void check_alarm_and_relay();
 void update_capacity();
 
-// ===== Helper: Flicker-free LCD printing =====
-void lcd_print_line(uint8_t row, const char* text) {
-  lcd.setCursor(0, row);
-  lcd.print("                "); // Clear 16 chars
-  lcd.setCursor(0, row);
-  lcd.print(text);
+// ===== Helper: Draw fill bar on OLED =====
+void draw_fill_bar(int percent) {
+  int bar_x = 0, bar_y = 54, bar_w = 128, bar_h = 10;
+  oled.drawRect(bar_x, bar_y, bar_w, bar_h, SH110X_WHITE);
+  int fill_w = (int)((bar_w - 2) * percent / 100.0f);
+  if (fill_w > 0) {
+    oled.fillRect(bar_x + 1, bar_y + 1, fill_w, bar_h - 2, SH110X_WHITE);
+  }
 }
 
 /* ============================================================
@@ -93,12 +98,18 @@ void setup() {
   Serial.println("\n=== TFmini-S LiDAR Tank Monitor ===");
   Serial.println("SensESP v3 - Blackwater Tank");
   
-  // Initialize I2C and LCD
+  // Initialize I2C and OLED
   Wire.begin(I2C_SDA, I2C_SCL);
-  lcd.begin(16, 2);
-  lcd.setBacklight(255);
-  lcd_print_line(0, "Initializing...");
-  lcd_print_line(1, "Please wait");
+  if (!oled.begin(OLED_I2C_ADDR, true)) {
+    Serial.println("ERROR: SH1106 OLED not found!");
+  }
+  oled.clearDisplay();
+  oled.setTextColor(SH110X_WHITE);
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println("Initializing...");
+  oled.println("Please wait");
+  oled.display();
   
   // Initialize LiDAR UART
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
@@ -143,8 +154,12 @@ void setup() {
   Serial.println("Signal K outputs initialized");
   
   // Display ready message
-  lcd_print_line(0, "SensESP Ready");
-  lcd_print_line(1, "TFmini-S LiDAR");
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println("SensESP Ready");
+  oled.println("TFmini-S LiDAR");
+  oled.display();
   delay(1000);
   
   Serial.println("Setup complete!");
@@ -171,7 +186,7 @@ void loop() {
   }
   
   // Always update display and check alarm (even if no new LiDAR reading)
-  update_lcd_display();
+  update_oled_display();
   check_alarm_and_relay();
   
   // Update capacity (in case config changed)
@@ -244,30 +259,62 @@ void compute_fill_level(int distance_cm) {
 }
 
 /* ============================================================
-   Update LCD Display
+   Update OLED Display
    ============================================================ */
-void update_lcd_display() {
+void update_oled_display() {
+  oled.clearDisplay();
+  oled.setTextColor(SH110X_WHITE);
+
   if (emergency_mode) {
-    // Emergency mode: Show fill level and emergency message
-    char line1[17];
-    snprintf(line1, sizeof(line1), "Fill:%2dcm %3d%%", fill_height_cm, fill_percent);
-    lcd_print_line(0, line1);
-    lcd_print_line(1, "EMERGENCY MODE");
+    // Emergency mode: large warning text
+    oled.setTextSize(1);
+    oled.setCursor(0, 0);
+    oled.println("!! EMERGENCY MODE !!");
+    oled.drawLine(0, 10, 128, 10, SH110X_WHITE);
+
+    oled.setTextSize(2);
+    char buf[10];
+    snprintf(buf, sizeof(buf), "%3d%%", fill_percent);
+    oled.setCursor(0, 16);
+    oled.print(buf);
+
+    oled.setTextSize(1);
+    oled.setCursor(0, 38);
+    snprintf(buf, sizeof(buf), "%d cm", fill_height_cm);
+    oled.print(buf);
   } else {
-    // Normal mode: Show fill height, percentage, and volume
-    char line1[17];
-    snprintf(line1, sizeof(line1), "Fill:%2dcm %3d%%", fill_height_cm, fill_percent);
-    lcd_print_line(0, line1);
-    
-    // Line 2: Current volume in liters
-    float volume_liters = tank_config->capacity_liters() * 
+    // Normal mode: title, fill %, height, volume, progress bar
+    oled.setTextSize(1);
+    oled.setCursor(0, 0);
+    oled.print("Blackwater Tank");
+    oled.drawLine(0, 10, 128, 10, SH110X_WHITE);
+
+    // Large fill percentage
+    oled.setTextSize(2);
+    char pct[8];
+    snprintf(pct, sizeof(pct), "%3d%%", fill_percent);
+    oled.setCursor(0, 14);
+    oled.print(pct);
+
+    // Fill height and volume on smaller text
+    oled.setTextSize(1);
+    char line2[22];
+    snprintf(line2, sizeof(line2), "Height: %d cm", fill_height_cm);
+    oled.setCursor(0, 34);
+    oled.print(line2);
+
+    float volume_liters = tank_config->capacity_liters() *
                           ((float)fill_height_cm / (float)tank_config->height_cm);
-    int volume_int = (int)roundf(volume_liters);
-    
-    char line2[17];
-    snprintf(line2, sizeof(line2), "Vol:%6dL", volume_int);
-    lcd_print_line(1, line2);
+    char line3[22];
+    snprintf(line3, sizeof(line3), "Volume: %d L", (int)roundf(volume_liters));
+    oled.setCursor(0, 44);
+    oled.print(line3);
   }
+
+  // Progress bar at bottom (always shown)
+  draw_fill_bar(fill_percent);
+
+  oled.display();
 }
 
 /* ============================================================
@@ -336,12 +383,8 @@ void check_alarm_and_relay() {
 }
 
 /* ============================================================
-   Update Capacity Display and Signal K
+   Update Capacity Signal K
    ============================================================ */
 void update_capacity() {
   sk_capacity->set(tank_config->capacity_m3());
-  
-  char capacity_text[17];
-  snprintf(capacity_text, sizeof(capacity_text), "Cap:%7.4f m3", tank_config->capacity_m3());
-  lcd_print_line(1, capacity_text);
 }
