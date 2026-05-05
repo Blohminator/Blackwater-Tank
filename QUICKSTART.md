@@ -76,10 +76,10 @@ Hoehe
 
 1. **Find the WiFi network**
    - Look for: `SensESP-blackwater-tank`
-   - Connect to it (no password)
+   - Password: `thisisfine`
 
 2. **Configure WiFi**
-   - Browser should auto-open to config page
+   - A captive portal should open automatically
    - If not, go to: `http://192.168.4.1`
    - Enter your WiFi SSID and password
    - Click Save

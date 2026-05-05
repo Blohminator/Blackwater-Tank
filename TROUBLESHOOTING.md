@@ -86,7 +86,7 @@
 - Won't connect to home WiFi
 
 **Solutions:**
-- Look for AP named "SensESP-blackwater-tank"
+- Look for AP named `SensESP-blackwater-tank` with password `thisisfine`
 - Reset WiFi settings by holding BOOT button for 5+ seconds
 - Check WiFi credentials (case-sensitive)
 - Ensure 2.4GHz WiFi (ESP32 doesn't support 5GHz)

@@ -98,8 +98,9 @@ Modify these values in `src/main.cpp` to match your tank dimensions.
 
 On first boot, the ESP32 creates a WiFi access point:
 - **SSID:** `SensESP-blackwater-tank`
-- **Password:** Check serial monitor or SensESP documentation
-- Connect to this network and configure your WiFi credentials through the captive portal
+- **Password:** `thisisfine`
+- Connect to this network — a captive portal should open automatically
+- If not, navigate to `http://192.168.4.1` to configure your WiFi credentials
 
 ### Web Configuration
 

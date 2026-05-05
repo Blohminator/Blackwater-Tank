@@ -98,8 +98,9 @@ Passen Sie diese Werte in `src/main.cpp` an Ihre Tankabmessungen an.
 
 Beim ersten Start erstellt der ESP32 einen WiFi-Access-Point:
 - **SSID:** `SensESP-blackwater-tank`
-- **Passwort:** Siehe seriellen Monitor oder SensESP-Dokumentation
-- Mit diesem Netzwerk verbinden und WiFi-Zugangsdaten über das Captive Portal konfigurieren
+- **Passwort:** `thisisfine`
+- Mit diesem Netzwerk verbinden — ein Captive Portal öffnet sich automatisch
+- Falls nicht, `http://192.168.4.1` im Browser aufrufen
 
 ### Web-Konfiguration
 
