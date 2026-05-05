@@ -12,5 +12,7 @@
 			"path": ".."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"kiroAgent.configureMCP": "Disabled"
+	}
 }

@@ -19,20 +19,20 @@ const float DEFAULT_TANK_LENGTH_CM = 50.0f;
 const float DEFAULT_TANK_WIDTH_CM = 72.0f;
 const float DEFAULT_TANK_HEIGHT_CM = 87.0f;
 const float DEFAULT_SENSOR_OFFSET_CM = 5.0f;
-const int DEFAULT_ALARM_THRESHOLD_PERCENT = 80;
+const float DEFAULT_ALARM_HIGH_PERCENT = 85.0f;  // Relay ON threshold
+const float DEFAULT_ALARM_LOW_PERCENT  = 75.0f;  // Relay OFF threshold (hysteresis)
 
 // Hardware Pin Configuration
 // Modify these if your wiring is different
-#define RXD2 16              // LiDAR RX
-#define TXD2 17              // LiDAR TX
-#define ALARM_PIN 23         // Alarm output
-#define LCD_I2C_ADDR 0x27    // LCD I2C address (try 0x3F if 0x27 doesn't work)
-#define I2C_SDA 21           // I2C data
-#define I2C_SCL 22           // I2C clock
+#define TF_RX         16   // LiDAR RX
+#define TF_TX         17   // LiDAR TX
+#define ALARM_PIN     23   // Relay output (HW-482, active-high)
+#define EMERGENCY_PIN 19   // Emergency input (active-LOW)
+#define OLED_SDA      32   // OLED Software I2C data
+#define OLED_SCL      33   // OLED Software I2C clock
 
 // Timing Configuration
-#define READ_INTERVAL_MS 200    // How often to read LiDAR (milliseconds)
-#define LCD_UPDATE_MS 200       // How often to update LCD (milliseconds)
+#define READ_INTERVAL_MS 100    // How often to read LiDAR (milliseconds)
 
 // Signal K Path Configuration
 // Change these if you want different tank types or instances

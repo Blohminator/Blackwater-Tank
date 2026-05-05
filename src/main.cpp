@@ -1,390 +1,402 @@
 /*============================================
-Blackwater Tank Level Monitor
-ESP32 + TFmini-S LiDAR + SensESP v3
-Signal K: tanks.blackWater.0.*
-SH1106 OLED display + configurable alarm
-Web-UI: /config
+  Blackwater Tank Level Monitor
+  Hardware:  ESP32 + TFmini-S LiDAR
+  Framework: SensESP 3.2.0 -> Signal K
+  Display:   OLED SSD1306 128x64 (Software I2C)
+  Features:  Relay output with hysteresis, emergency mode
 ============================================*/
 
 #include <Arduino.h>
-#include <memory>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SH110X.h>
-#include <HardwareSerial.h>
-#include <ArduinoJson.h>
-
-#include "sensesp_app.h"
-#include "sensesp_app_builder.h"
+#include <U8g2lib.h>
+#include <memory>
+#include "sensesp/sensors/sensor.h"
 #include "sensesp/signalk/signalk_output.h"
+#include "sensesp_app_builder.h"
+#include "sensesp/signalk/signalk_metadata.h"
+#include "sensesp/ui/config_item.h"
+#include "sensesp/sensors/constant_sensor.h"
+#include "sensesp/transforms/lambda_transform.h"
 
 using namespace sensesp;
 
-// ===== Hardware Configuration =====
-#define RXD2 16              // LiDAR RX (ESP32 receives from TFmini TX)
-#define TXD2 17              // LiDAR TX (ESP32 sends to TFmini RX)
-#define ALARM_PIN 23         // Alarm output pin
-#define ALARM_INPUT_PIN 19   // Emergency alarm input (active LOW when closed)
-#define RELAY_PIN 18         // Relay control output
-#define OLED_I2C_ADDR 0x3C   // SH1106 OLED I2C address (0x3C or 0x3D)
-#define OLED_WIDTH 128       // OLED display width in pixels
-#define OLED_HEIGHT 64       // OLED display height in pixels
-#define I2C_SDA 21           // I2C data pin
-#define I2C_SCL 22           // I2C clock pin
+// ============================================================
+// PIN ASSIGNMENTS
+// ============================================================
+#define TF_RX         16   // ESP32 RX2  <- TFmini-S TX
+#define TF_TX         17   // ESP32 TX2  -> TFmini-S RX
+#define ALARM_PIN     23   // Relay output (HW-482 module, active-high)
+#define EMERGENCY_PIN 19   // Emergency input (LOW = active, internal pull-up enabled)
 
-// ===== TFmini-S Protocol =====
-const int TFMINI_HEADER = 0x59;
-const int TFMINI_FRAME_SIZE = 9;
+// ============================================================
+// OLED DISPLAY (SSD1306, Software I2C)
+// Uses dedicated pins 32/33 to avoid bus conflict with
+// SensESP hardware I2C on GPIO 21/22.
+// ============================================================
+#define OLED_SCL 33
+#define OLED_SDA 32
+U8G2_SSD1306_128X64_NONAME_F_SW_I2C display(U8G2_R0, OLED_SCL, OLED_SDA, U8X8_PIN_NONE);
 
-// ===== OLED Instance =====
-Adafruit_SH1106G oled(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
+// ============================================================
+// TFmini-S PROTOCOL CONSTANTS
+// ============================================================
+const uint8_t TFMINI_HEADER     = 0x59;  // Frame start byte (appears twice)
+const int     TFMINI_FRAME_SIZE = 9;     // Total bytes per frame
 
-// ===== Tank Configuration Structure =====
-struct TankConfig {
-  float length_cm = 50.0f;
-  float width_cm = 72.0f;
-  float height_cm = 87.0f;
-  float sensor_offset_cm = 5.0f;
-  int alarm_threshold_percent = 80;
-  
-  float capacity_liters() const {
-    return (length_cm * width_cm * height_cm) / 1000.0f;
+// ============================================================
+// TANK CONFIGURATION
+// All values are configurable via the SensESP web UI at
+// http://blackwater-tank.local and are persisted in flash.
+// ============================================================
+float cfg_length     = 50.0f;   // Tank internal length (cm)
+float cfg_width      = 72.0f;   // Tank internal width (cm)
+float cfg_height     = 87.0f;   // Tank internal height (cm)
+float cfg_offset     =  5.0f;   // Distance from sensor face to tank top edge (cm)
+float cfg_alarm_high = 85.0f;   // Relay ON threshold  (% fill level)
+float cfg_alarm_low  = 75.0f;   // Relay OFF threshold (% fill level, hysteresis)
+
+// ============================================================
+// TANK GEOMETRY HELPERS
+// ============================================================
+
+/** Returns total tank capacity in litres based on current config. */
+float tank_capacity_liters() {
+  return cfg_length * cfg_width * cfg_height / 1000.0f;
+}
+
+/** Returns total tank capacity in cubic metres based on current config. */
+float tank_capacity_m3() {
+  return tank_capacity_liters() / 1000.0f;
+}
+
+// ============================================================
+// SIGNAL K OUTPUT HANDLES
+// Initialised in setup(), written from TFminiSensor::update().
+// ============================================================
+SKOutputFloat* sk_level;     // tanks.blackWater.0.currentLevel  [ratio 0..1]
+SKOutputFloat* sk_capacity;  // tanks.blackWater.0.capacity       [m³]
+SKOutputFloat* sk_volume;    // tanks.blackWater.0.currentVolume  [m³]
+
+// ============================================================
+// SHARED DISPLAY STATE
+// Written by TFminiSensor::update(), read by updateDisplay().
+// ============================================================
+int   disp_percent   = 0;
+float disp_height_cm = 0.0f;
+float disp_volume_l  = 0.0f;
+bool  emergency_mode = false;  // true while emergency mode is active
+bool  display_ok     = false;  // true after display initialised successfully
+
+// ============================================================
+// VERTICAL FILL BAR
+// Draws a bordered rectangle on the right side of the display
+// that fills from the bottom upward proportional to 'percent'.
+// ============================================================
+void drawVerticalBar(int percent) {
+  const int BAR_X = 110;  // Left edge (pixels)
+  const int BAR_W = 16;   // Width (pixels)
+  const int BAR_Y = 2;    // Top edge (pixels)
+  const int BAR_H = 60;   // Total height (pixels)
+
+  display.drawFrame(BAR_X, BAR_Y, BAR_W, BAR_H);
+
+  int fill_h = (BAR_H * percent) / 100;
+  if (fill_h > 0) {
+    display.drawBox(BAR_X + 1, BAR_Y + BAR_H - fill_h, BAR_W - 2, fill_h);
   }
-  
-  float capacity_m3() const {
-    return capacity_liters() / 1000.0f;
+}
+
+// ============================================================
+// DISPLAY UPDATE
+// Renders the current state to the OLED buffer and flushes it.
+// Shows a reduced emergency screen when emergency_mode is true,
+// otherwise shows fill level, percentage and fill height.
+// UI texts are in German; code comments are in English.
+// ============================================================
+void updateDisplay() {
+  if (!display_ok) return;
+
+  display.clearBuffer();
+  drawVerticalBar(disp_percent);
+
+  if (emergency_mode) {
+    // ===== EMERGENCY MODE =====
+    display.setFont(u8g2_font_ncenB12_tr);
+    display.drawStr(4, 18, "NOT-");
+    display.drawStr(4, 34, "BETRIEB");
+
+    display.setFont(u8g2_font_ncenB10_tr);
+    display.drawStr(4, 52, "Fuellstand:");
+    display.setCursor(80, 52);
+    display.print(disp_percent);
+    display.print("%");
+
+  } else {
+    // ===== NORMAL MODE =====
+    display.setFont(u8g2_font_ncenB10_tr);
+    display.drawStr(4, 16, "Fuellstand");
+
+    display.setFont(u8g2_font_ncenB14_tr);
+    display.setCursor(4, 34);
+    display.print(disp_percent);
+    display.print("%");
+
+    display.setFont(u8g2_font_ncenB10_tr);
+    display.drawStr(4, 48, "Hoehe");
+
+    display.setCursor(4, 62);
+    display.print((int)disp_height_cm);
+    display.print(" cm");
+  }
+
+  display.sendBuffer();
+}
+
+// ============================================================
+// TFmini-S FRAME PARSER
+// Drains Serial2, validates frames (dual-header + checksum) and
+// returns the distance value [cm] of the last valid frame.
+// Returns -1 if no valid frame was received since the last call.
+// ============================================================
+int read_tfmini() {
+  static uint8_t buf[TFMINI_FRAME_SIZE * 4];  // Ring buffer for incoming bytes
+  static int buf_len = 0;
+  int last_valid = -1;
+
+  // Append all available bytes to the buffer
+  while (Serial2.available()) {
+    if (buf_len >= (int)sizeof(buf)) buf_len = 0;  // Overflow guard: reset
+    buf[buf_len++] = Serial2.read();
+  }
+
+  // Scan buffer for complete, valid frames
+  int i = 0;
+  while (i <= buf_len - TFMINI_FRAME_SIZE) {
+    // Check dual-header bytes
+    if (buf[i] != TFMINI_HEADER || buf[i+1] != TFMINI_HEADER) {
+      i++; continue;
+    }
+    // Verify checksum (sum of bytes 0..7 == byte 8)
+    uint8_t cs = 0;
+    for (int j = i; j < i + 8; j++) cs += buf[j];
+    if (cs != buf[i+8]) { i++; continue; }
+
+    // Extract 16-bit distance (little-endian, bytes 2 and 3)
+    last_valid = buf[i+2] + (buf[i+3] << 8);
+    i += TFMINI_FRAME_SIZE;
+  }
+
+  // Discard consumed bytes, keep any partial frame at the front
+  if (i > 0) {
+    buf_len -= i;
+    memmove(buf, buf + i, buf_len);
+  }
+
+  return last_valid;
+}
+
+// ============================================================
+// TFminiSensor CLASS
+// SensESP sensor that polls the TFmini-S every 100 ms via the
+// ReactESP event loop.  On each tick it:
+//   1. Reads the latest distance measurement.
+//   2. Converts distance to fill height, ratio and volume.
+//   3. Publishes values to Signal K.
+//   4. Evaluates emergency mode (high fill + GPIO 19 pulled LOW).
+//   5. Controls the alarm relay with hysteresis.
+//   6. Refreshes the OLED display.
+// ============================================================
+class TFminiSensor : public Sensor<float> {
+ public:
+  TFminiSensor() : Sensor<float>("") {
+    Serial2.begin(115200, SERIAL_8N1, TF_RX, TF_TX);
+    Serial.println("TFmini-S UART started");
+    event_loop()->onRepeat(100, [this]() { this->update(); });
+  }
+
+ private:
+  bool alarm_on = false;  // Current relay state (hysteresis latch)
+
+  void update() {
+    int dist = read_tfmini();  // Distance from sensor to liquid surface [cm]
+
+    if (dist > 0) {
+      // Subtract sensor offset to get distance from tank top to liquid surface,
+      // then invert to obtain fill height from the tank bottom.
+      float empty  = constrain((float)dist - cfg_offset, 0.0f, cfg_height);
+      float fill_h = cfg_height - empty;
+      float ratio  = constrain(fill_h / cfg_height, 0.0f, 1.0f);
+
+      // Update shared display state
+      disp_height_cm = fill_h;
+      disp_percent   = (int)roundf(ratio * 100.0f);
+      disp_volume_l  = tank_capacity_liters() * ratio;
+
+      // Publish to Signal K
+      sk_level->set(ratio);
+      sk_volume->set(tank_capacity_m3() * ratio);
+    }
+
+    // Emergency mode: fill level at or above alarm threshold AND
+    // external emergency input pulled to GND (e.g. bilge float switch).
+    bool emergency_input = (digitalRead(EMERGENCY_PIN) == LOW);
+    emergency_mode = (disp_percent >= (int)cfg_alarm_high) && emergency_input;
+
+    if (emergency_mode) {
+      // Safe state: relay OFF regardless of alarm hysteresis
+      digitalWrite(ALARM_PIN, LOW);
+      Serial.printf("!! EMERGENCY !! Dist=%d cm | Fill=%d%% | Input=GND\n",
+        dist, disp_percent);
+    } else {
+      // Normal operation: relay controlled by hysteresis thresholds
+      if (!alarm_on && disp_percent >= (int)cfg_alarm_high) {
+        alarm_on = true;   // Arm relay when fill reaches upper threshold
+      } else if (alarm_on && disp_percent <= (int)cfg_alarm_low) {
+        alarm_on = false;  // Release relay when fill drops to lower threshold
+      }
+      digitalWrite(ALARM_PIN, alarm_on ? HIGH : LOW);  // HW-482: active-high
+
+      if (dist > 0) {
+        Serial.printf("Dist=%d cm | Fill=%.1f cm (%d%%) | Vol=%.1f L | Alarm=%s\n",
+          dist, disp_height_cm, disp_percent, disp_volume_l,
+          alarm_on ? "ON" : "off");
+      }
+    }
+
+    updateDisplay();
   }
 };
 
-std::shared_ptr<TankConfig> tank_config;
-
-// ===== Signal K Outputs =====
-SKOutputFloat* sk_current_level;
-SKOutputFloat* sk_capacity;
-SKOutputFloat* sk_current_volume;
-
-// ===== Runtime State =====
-int fill_height_cm = 0;
-int fill_percent = 0;
-int remaining_cm = 0;
-bool emergency_mode = false;  // Emergency operation mode flag
-
-// ===== Function Prototypes =====
-int read_tfmini_distance();
-void compute_fill_level(int distance_cm);
-void update_oled_display();
-void check_alarm_and_relay();
-void update_capacity();
-
-// ===== Helper: Draw fill bar on OLED =====
-void draw_fill_bar(int percent) {
-  int bar_x = 0, bar_y = 54, bar_w = 128, bar_h = 10;
-  oled.drawRect(bar_x, bar_y, bar_w, bar_h, SH110X_WHITE);
-  int fill_w = (int)((bar_w - 2) * percent / 100.0f);
-  if (fill_w > 0) {
-    oled.fillRect(bar_x + 1, bar_y + 1, fill_w, bar_h - 2, SH110X_WHITE);
-  }
-}
-
-/* ============================================================
-   SETUP
-   ============================================================ */
+// ============================================================
+// SETUP
+// ============================================================
 void setup() {
-  // Initialize logging
-  SetupLogging();
-  
   Serial.begin(115200);
-  delay(50);
-  Serial.println("\n=== TFmini-S LiDAR Tank Monitor ===");
-  Serial.println("SensESP v3 - Blackwater Tank");
-  
-  // Initialize I2C and OLED
-  Wire.begin(I2C_SDA, I2C_SCL);
-  if (!oled.begin(OLED_I2C_ADDR, true)) {
-    Serial.println("ERROR: SH1106 OLED not found!");
-  }
-  oled.clearDisplay();
-  oled.setTextColor(SH110X_WHITE);
-  oled.setTextSize(1);
-  oled.setCursor(0, 0);
-  oled.println("Initializing...");
-  oled.println("Please wait");
-  oled.display();
-  
-  // Initialize LiDAR UART
-  Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
-  Serial.println("LiDAR UART initialized on Serial2");
-  
-  // Initialize alarm pin
+  delay(500);
+  Serial.println("Blackwater Tank Monitor - TFmini-S");
+
+  // --- GPIO initialisation ---
   pinMode(ALARM_PIN, OUTPUT);
-  digitalWrite(ALARM_PIN, LOW);
-  
-  // Initialize alarm input pin (with internal pull-up)
-  pinMode(ALARM_INPUT_PIN, INPUT_PULLUP);
-  
-  // Initialize relay pin
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);  // Set to ON for normal operation
-  
-  Serial.println("GPIO pins initialized");
-  
-  // Build SensESP application
+  digitalWrite(ALARM_PIN, LOW);          // Relay off at boot (HW-482: active-high)
+  pinMode(EMERGENCY_PIN, INPUT_PULLUP);  // Emergency input, active-LOW
+
+  // --- Display: first init before SensESP ---
+  // Software I2C on GPIO 32/33 avoids bus conflict with SensESP.
+  display.begin();
+  display.setContrast(255);
+  display.clearBuffer();
+  display.setFont(u8g2_font_ncenB08_tr);
+  display.drawStr(0, 15, "Init...");
+  display.sendBuffer();
+  display_ok = true;
+  Serial.println("Display OK");
+
+  SetupLogging();
+
+  // --- SensESP application ---
   SensESPAppBuilder builder;
-  sensesp_app = builder.set_hostname("blackwater-tank")->get_app();
-  
-  Serial.println("SensESP app created");
-  
-  // Create tank configuration object
-  tank_config = std::make_shared<TankConfig>();
-  
-  // Note: For now, tank parameters are set in code
-  // Future enhancement: Add web UI configuration using ConfigItem
-  Serial.println("Tank configuration initialized");
-  
-  // Create Signal K outputs
-  sk_current_level = new SKOutputFloat("tanks.blackWater.0.currentLevel");
-  sk_capacity = new SKOutputFloat("tanks.blackWater.0.capacity");
-  sk_current_volume = new SKOutputFloat("tanks.blackWater.0.currentVolume");
-  
-  // Initialize Signal K values
-  sk_current_level->set(0.0f);
-  sk_current_volume->set(0.0f);
-  update_capacity();
-  
-  Serial.println("Signal K outputs initialized");
-  
-  // Display ready message
-  oled.clearDisplay();
-  oled.setTextSize(1);
-  oled.setCursor(0, 0);
-  oled.println("SensESP Ready");
-  oled.println("TFmini-S LiDAR");
-  oled.display();
-  delay(1000);
-  
+  sensesp_app = (&builder)
+    ->set_hostname("blackwater-tank")
+    ->get_app();
+
+  // --- Display: re-init after SensESP ---
+  // SensESP may reconfigure the I2C bus during get_app(); reinitialise
+  // the software-I2C display to restore a known good state.
+  if (display_ok) {
+    display.begin();
+    display.setContrast(255);
+    display.clearBuffer();
+    display.setFont(u8g2_font_ncenB08_tr);
+    display.drawStr(0, 15, "Init...");
+    display.sendBuffer();
+  }
+
+  // ============================================================
+  // TANK CONFIGURATION – WEB UI
+  // Each ConstantSensor exposes a field in the SensESP web UI at
+  // http://blackwater-tank.local.  The LambdaConsumer writes the
+  // value back to the corresponding global config variable so that
+  // changes take effect immediately without a reboot.
+  // ============================================================
+  auto* sens_length = new ConstantSensor<float>(cfg_length, 0, "/Tank/Length_cm");
+  ConfigItem(sens_length)
+    ->set_title("Tank Length (cm)")
+    ->set_description("Internal tank length in cm")
+    ->set_sort_order(100);
+  sens_length->connect_to(new LambdaConsumer<float>([](float v){ cfg_length = v; }));
+
+  auto* sens_width = new ConstantSensor<float>(cfg_width, 0, "/Tank/Width_cm");
+  ConfigItem(sens_width)
+    ->set_title("Tank Width (cm)")
+    ->set_description("Internal tank width in cm")
+    ->set_sort_order(200);
+  sens_width->connect_to(new LambdaConsumer<float>([](float v){ cfg_width = v; }));
+
+  auto* sens_height = new ConstantSensor<float>(cfg_height, 0, "/Tank/Height_cm");
+  ConfigItem(sens_height)
+    ->set_title("Tank Height (cm)")
+    ->set_description("Internal tank height in cm")
+    ->set_sort_order(300);
+  sens_height->connect_to(new LambdaConsumer<float>([](float v){ cfg_height = v; }));
+
+  auto* sens_offset = new ConstantSensor<float>(cfg_offset, 0, "/Tank/Sensor_Offset_cm");
+  ConfigItem(sens_offset)
+    ->set_title("Sensor Offset (cm)")
+    ->set_description("Distance from sensor face to tank top edge in cm")
+    ->set_sort_order(400);
+  sens_offset->connect_to(new LambdaConsumer<float>([](float v){ cfg_offset = v; }));
+
+  auto* sens_alarm_high = new ConstantSensor<float>(cfg_alarm_high, 0, "/Tank/Alarm_ON_pct");
+  ConfigItem(sens_alarm_high)
+    ->set_title("Alarm ON threshold % (default: 85)")
+    ->set_description("Fill level % at which the relay is activated")
+    ->set_sort_order(500);
+  sens_alarm_high->connect_to(new LambdaConsumer<float>([](float v){ cfg_alarm_high = v; }));
+
+  auto* sens_alarm_low = new ConstantSensor<float>(cfg_alarm_low, 0, "/Tank/Alarm_OFF_pct");
+  ConfigItem(sens_alarm_low)
+    ->set_title("Alarm OFF threshold % (default: 75)")
+    ->set_description("Fill level % below which the relay is deactivated (hysteresis)")
+    ->set_sort_order(600);
+  sens_alarm_low->connect_to(new LambdaConsumer<float>([](float v){ cfg_alarm_low = v; }));
+
+  // ============================================================
+  // SIGNAL K OUTPUTS
+  // ============================================================
+  sk_level = new SKOutputFloat(
+    "tanks.blackWater.0.currentLevel", "/Tank/Level",
+    new SKMetadata("ratio", "Blackwater tank fill level")
+  );
+  sk_capacity = new SKOutputFloat(
+    "tanks.blackWater.0.capacity", "/Tank/Capacity",
+    new SKMetadata("m3", "Blackwater tank total capacity")
+  );
+  sk_volume = new SKOutputFloat(
+    "tanks.blackWater.0.currentVolume", "/Tank/Volume",
+    new SKMetadata("m3", "Blackwater tank current volume")
+  );
+
+  // Publish capacity once after 5 s (Signal K server may not be ready at boot)
+  event_loop()->onDelay(5000, []() {
+    sk_capacity->set(tank_capacity_m3());
+  });
+  // Re-publish capacity every 60 s to keep the Signal K value fresh
+  event_loop()->onRepeat(60000, []() {
+    sk_capacity->set(tank_capacity_m3());
+  });
+
+  // Start sensor – registers the 100 ms onRepeat callback in the event loop
+  new TFminiSensor();
+
   Serial.println("Setup complete!");
 }
 
-/* ============================================================
-   MAIN LOOP
-   ============================================================ */
+// ============================================================
+// LOOP
+// Delegates all work to the ReactESP event loop.
+// Application logic runs exclusively via onRepeat / onDelay
+// callbacks registered during setup().
+// ============================================================
 void loop() {
-  // Read distance from LiDAR
-  int distance = read_tfmini_distance();
-  
-  if (distance > 0) {
-    // Compute fill level from distance
-    compute_fill_level(distance);
-    
-    // Calculate level ratio (0.0 to 1.0)
-    float level_ratio = (float)fill_height_cm / (float)tank_config->height_cm;
-    level_ratio = constrain(level_ratio, 0.0f, 1.0f);
-    
-    // Update Signal K outputs
-    sk_current_level->set(level_ratio);
-    sk_current_volume->set(tank_config->capacity_m3() * level_ratio);
-  }
-  
-  // Always update display and check alarm (even if no new LiDAR reading)
-  update_oled_display();
-  check_alarm_and_relay();
-  
-  // Update capacity (in case config changed)
-  sk_capacity->set(tank_config->capacity_m3());
-  
-  // Run SensESP event loop
   event_loop()->tick();
-  
-  delay(200);
-}
-
-/* ============================================================
-   TFmini-S LiDAR Reading
-   Frame: 9 bytes [0x59 0x59 DistL DistH StrengthL StrengthH Reserved Quality Checksum]
-   ============================================================ */
-int read_tfmini_distance() {
-  static uint8_t buffer[TFMINI_FRAME_SIZE];
-  static int buffer_index = 0;
-  int distance = 0;
-  
-  while (Serial2.available()) {
-    uint8_t byte = Serial2.read();
-    buffer[buffer_index++] = byte;
-    
-    if (buffer_index >= TFMINI_FRAME_SIZE) {
-      // Check for valid frame header
-      if (buffer[0] == TFMINI_HEADER && buffer[1] == TFMINI_HEADER) {
-        // Verify checksum
-        uint8_t checksum = 0;
-        for (int i = 0; i < 8; i++) {
-          checksum += buffer[i];
-        }
-        
-        if (checksum == buffer[8]) {
-          // Extract distance (cm)
-          distance = buffer[2] + (buffer[3] << 8);
-          buffer_index = 0;
-          return distance;
-        }
-      }
-      
-      // Shift buffer on invalid frame
-      for (int i = 0; i < TFMINI_FRAME_SIZE - 1; i++) {
-        buffer[i] = buffer[i + 1];
-      }
-      buffer_index = TFMINI_FRAME_SIZE - 1;
-    }
-  }
-  
-  return distance;
-}
-
-/* ============================================================
-   Compute Fill Level from Distance
-   ============================================================ */
-void compute_fill_level(int distance_cm) {
-  // Calculate remaining height (distance minus sensor offset)
-  remaining_cm = distance_cm - (int)roundf(tank_config->sensor_offset_cm);
-  
-  // Clamp to valid range
-  int tank_height = (int)roundf(tank_config->height_cm);
-  remaining_cm = constrain(remaining_cm, 0, tank_height);
-  
-  // Calculate fill height
-  fill_height_cm = tank_height - remaining_cm;
-  
-  // Calculate fill percentage
-  fill_percent = (int)roundf(100.0f * (float)fill_height_cm / (float)tank_height);
-  fill_percent = constrain(fill_percent, 0, 100);
-}
-
-/* ============================================================
-   Update OLED Display
-   ============================================================ */
-void update_oled_display() {
-  oled.clearDisplay();
-  oled.setTextColor(SH110X_WHITE);
-
-  if (emergency_mode) {
-    // Emergency mode: large warning text
-    oled.setTextSize(1);
-    oled.setCursor(0, 0);
-    oled.println("!! EMERGENCY MODE !!");
-    oled.drawLine(0, 10, 128, 10, SH110X_WHITE);
-
-    oled.setTextSize(2);
-    char buf[10];
-    snprintf(buf, sizeof(buf), "%3d%%", fill_percent);
-    oled.setCursor(0, 16);
-    oled.print(buf);
-
-    oled.setTextSize(1);
-    oled.setCursor(0, 38);
-    snprintf(buf, sizeof(buf), "%d cm", fill_height_cm);
-    oled.print(buf);
-  } else {
-    // Normal mode: title, fill %, height, volume, progress bar
-    oled.setTextSize(1);
-    oled.setCursor(0, 0);
-    oled.print("Blackwater Tank");
-    oled.drawLine(0, 10, 128, 10, SH110X_WHITE);
-
-    // Large fill percentage
-    oled.setTextSize(2);
-    char pct[8];
-    snprintf(pct, sizeof(pct), "%3d%%", fill_percent);
-    oled.setCursor(0, 14);
-    oled.print(pct);
-
-    // Fill height and volume on smaller text
-    oled.setTextSize(1);
-    char line2[22];
-    snprintf(line2, sizeof(line2), "Height: %d cm", fill_height_cm);
-    oled.setCursor(0, 34);
-    oled.print(line2);
-
-    float volume_liters = tank_config->capacity_liters() *
-                          ((float)fill_height_cm / (float)tank_config->height_cm);
-    char line3[22];
-    snprintf(line3, sizeof(line3), "Volume: %d L", (int)roundf(volume_liters));
-    oled.setCursor(0, 44);
-    oled.print(line3);
-  }
-
-  // Progress bar at bottom (always shown)
-  draw_fill_bar(fill_percent);
-
-  oled.display();
-}
-
-/* ============================================================
-   Check Alarm and Relay Control with Emergency Mode
-   ============================================================ */
-void check_alarm_and_relay() {
-  bool threshold_exceeded = (fill_percent >= tank_config->alarm_threshold_percent);
-  bool alarm_input_closed = (digitalRead(ALARM_INPUT_PIN) == LOW);
-  
-  // State tracking for debug output
-  static bool last_emergency_mode = false;
-  static bool last_threshold_exceeded = false;
-  static bool last_relay_state = true;  // Track relay state
-  
-  // Emergency mode state machine
-  if (emergency_mode) {
-    // Currently IN emergency mode - only exit when pin 19 opens
-    if (!alarm_input_closed) {
-      emergency_mode = false;
-      Serial.println("Emergency OFF");
-      // Display update happens in main loop
-    }
-  } else {
-    // NOT in emergency mode - enter if both conditions met
-    if (threshold_exceeded && alarm_input_closed) {
-      emergency_mode = true;
-      Serial.println("Emergency ON");
-      // Display update happens in main loop
-    }
-  }
-  
-  // Determine relay state
-  // Emergency mode: Relay ON (safe/normal state)
-  // Normal mode: Relay OFF when threshold exceeded (alarm state)
-  bool relay_should_be_on = emergency_mode || !threshold_exceeded;
-  
-  // Set outputs
-  digitalWrite(RELAY_PIN, relay_should_be_on ? HIGH : LOW);
-  digitalWrite(ALARM_PIN, (emergency_mode || threshold_exceeded) ? HIGH : LOW);
-  
-  // Read back the actual pin state to verify
-  int relay_pin_state = digitalRead(RELAY_PIN);
-  int alarm_pin_state = digitalRead(ALARM_PIN);
-  
-  // Debug output on state changes only
-  if (emergency_mode != last_emergency_mode || 
-      threshold_exceeded != last_threshold_exceeded ||
-      relay_should_be_on != last_relay_state) {
-    
-    // Single Serial.println with all info
-    char debug_msg[80];
-    snprintf(debug_msg, sizeof(debug_msg), 
-             "%s: %d%% A:%s R:%s (Pin18=%d Pin23=%d)",
-             emergency_mode ? "EMG" : "NRM",
-             fill_percent,
-             (emergency_mode || threshold_exceeded) ? "ON" : "OFF",
-             relay_should_be_on ? "ON" : "OFF",
-             relay_pin_state,
-             alarm_pin_state);
-    Serial.println(debug_msg);
-    
-    last_emergency_mode = emergency_mode;
-    last_threshold_exceeded = threshold_exceeded;
-    last_relay_state = relay_should_be_on;
-  }
-}
-
-/* ============================================================
-   Update Capacity Signal K
-   ============================================================ */
-void update_capacity() {
-  sk_capacity->set(tank_config->capacity_m3());
 }

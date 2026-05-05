@@ -12,7 +12,7 @@ Dieses Projekt bietet eine komplette Lösung zur Überwachung von Blackwater-Tan
 
 - **TFmini-S LiDAR-Sensor** für berührungslose Distanzmessung
 - **Signal K Integration** über SensESP v3 Framework
-- **SH1106 OLED-Display** (128x64 I2C) zeigt Füllstand, Volumen und Fortschrittsbalken an
+- **SSD1306 OLED-Display** (128x64, Software I2C auf GPIO 32/33) zeigt Füllstand und Fortschrittsbalken an
 - **Konfigurierbarer Alarm** mit einstellbarem Schwellwert
 - **Notbetriebsmodus** mit manueller Überbrückung
 - **Relaissteuerung** für elektrische Toilettensystem-Automatisierung
@@ -25,7 +25,7 @@ Dieses Projekt bietet eine komplette Lösung zur Überwachung von Blackwater-Tan
 
 - **ESP32 Board** - Wemos D1 Mini ESP32 oder kompatibel (ESP32-WROOM-32)
 - **TFmini-S LiDAR-Sensor** - Berührungslose Distanzmessung (30-1200cm Reichweite)
-- **SH1106 OLED-Display** - 128x64 Pixel, I2C (Adresse 0x3C)
+- **SSD1306 OLED-Display** - 128x64 Pixel, Software I2C auf GPIO 32/33 (Adresse 0x3C)
 - **Relaismodul** - Zur Steuerung elektrischer Toilette oder Pumpe (optional)
 - **Alarmgerät** - LED, Summer oder externes Alarmsystem (optional)
 - **5V Stromversorgung** - Mindestens 2A empfohlen für stabilen Betrieb
@@ -37,11 +37,10 @@ Dieses Projekt bietet eine komplette Lösung zur Überwachung von Blackwater-Tan
 |-----------|-----------|-------------|
 | LiDAR RX | GPIO 16 | Empfängt Daten von TFmini-S TX |
 | LiDAR TX | GPIO 17 | Sendet Befehle an TFmini-S RX |
-| OLED SDA | GPIO 21 | I2C Datenleitung |
-| OLED SCL | GPIO 22 | I2C Taktleitung |
-| Alarmausgang | GPIO 23 | Alarmausgang (HIGH bei Schwellwertüberschreitung) |
-| Alarmeingang | GPIO 19 | Notfall-Alarmeingang (aktiv LOW, interner Pull-up) |
-| Relaisausgang | GPIO 18 | Relaissteuerung (HIGH=EIN im Normalbetrieb, LOW=AUS im Notfall) |
+| OLED SDA | GPIO 32 | Software I2C Datenleitung |
+| OLED SCL | GPIO 33 | Software I2C Taktleitung |
+| Alarmausgang | GPIO 23 | Relaisausgang (HIGH = Relais an, HW-482 aktiv-high) |
+| Notfalleingang | GPIO 19 | Notfall-Eingang (aktiv LOW, interner Pull-up) |
 
 ## Signal K Pfade
 
@@ -130,16 +129,14 @@ builder
 Das OLED zeigt Echtzeitinformationen in zwei Modi:
 
 ### Normalmodus
-- Großer Füllprozentsatz (z.B. `75%`)
+- Füllprozentsatz (z.B. `75%`)
 - Füllhöhe in Zentimetern
-- Aktuelles Volumen in Litern
-- Fortschrittsbalken am unteren Bildschirmrand
+- Vertikaler Füllbalken auf der rechten Seite
 
 ### Notfallmodus
-- `!! EMERGENCY MODE !!` Warnungsheader
-- Großer Füllprozentsatz
-- Füllhöhe in Zentimetern
-- Fortschrittsbalken am unteren Bildschirmrand
+- `NOT-BETRIEB` Warnung
+- Füllprozentsatz
+- Vertikaler Füllbalken auf der rechten Seite
 
 ## Notbetrieb
 
@@ -152,17 +149,16 @@ Das System verfügt über eine Notfall-Überbrückungsfunktion:
 
 **Aktivierung des Notfallmodus:**
 Wenn BEIDE Bedingungen erfüllt sind:
-1. Füllstand überschreitet Alarmschwelle (Standard 80%)
-2. Alarmeingang (GPIO 19) ist geschlossen (mit GND verbunden)
+1. Füllstand erreicht oder überschreitet Alarmschwelle (Standard 85%)
+2. Notfalleingang (GPIO 19) wird auf GND gezogen
 
 **Verhalten im Notfallmodus:**
-- Relaisausgang: LOW (AUS) - schaltet in Normal-/Sicherheitszustand
-- Alarmausgang: HIGH (aktiv)
-- Anzeige: Zeigt "EMERGENCY MODE" Meldung
+- Relaisausgang: LOW (AUS) — sicherer Zustand
+- Anzeige: Zeigt "NOT-BETRIEB" Meldung
 - Seriell: Protokolliert Notfallaktivierung
 
 **Beenden des Notfallmodus:**
-Wenn der Alarmeingang (GPIO 19) geöffnet wird (getrennt), kehrt das System automatisch zum Normalbetrieb zurück.
+Wenn der Notfalleingang (GPIO 19) geöffnet wird (von GND getrennt), kehrt das System automatisch zum Normalbetrieb zurück.
 
 ## TFmini-S LiDAR
 
@@ -194,7 +190,7 @@ Zusätzliche Montagehinweise:
 
 ### OLED zeigt nichts an
 - I2C-Adresse überprüfen (Standard 0x3C, manche verwenden 0x3D)
-- I2C-Verkabelung prüfen (SDA/SCL)
+- Verkabelung prüfen: SDA → GPIO 32, SCL → GPIO 33
 - Mit I2C-Scanner-Sketch testen
 
 ### Keine LiDAR-Messwerte
@@ -236,7 +232,7 @@ Das System arbeitet mit einem 200ms Update-Zyklus:
 ### Kommunikationsprotokolle
 
 - **UART:** TFmini-S LiDAR (115200 Baud, 8N1)
-- **I2C:** OLED-Display (100kHz, Adresse 0x3C)
+- **I2C:** OLED-Display (Software I2C, GPIO 32/33, Adresse 0x3C)
 - **WiFi:** 802.11 b/g/n (2.4GHz)
 - **Signal K:** WebSocket über HTTP (Standard-Port 3000)
 
@@ -258,8 +254,7 @@ Das System arbeitet mit einem 200ms Update-Zyklus:
 ### Abhängigkeiten
 
 - [SensESP](https://github.com/SignalK/SensESP) v3.2.0+
-- [Adafruit SH110X](https://github.com/adafruit/Adafruit_SH110x) v2.1.10+
-- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) v1.11.9+
+- [U8g2](https://github.com/olikraus/u8g2) (OLED-Treiber)
 - [ArduinoJson](https://arduinojson.org/) v7.0.0+
 
 ## Mitwirken

@@ -18,33 +18,29 @@
   upload_speed = 115200
   ```
 
-### 2. LCD Shows Nothing
+### 2. OLED Shows Nothing
 
 **Symptoms:**
-- LCD backlight on but no text
-- Completely blank display
+- OLED display stays dark after boot
+- No "Init..." message visible
 
 **Solutions:**
-- Adjust contrast potentiometer on I2C backpack (small blue screw)
-- Verify I2C address (try 0x3F if 0x27 doesn't work):
-  ```cpp
-  LiquidCrystal_PCF8574 lcd(0x3F);  // Change address
-  ```
-- Check wiring: SDA→21, SCL→22
-- Run I2C scanner to detect address
-- Verify 5V power supply
+- Check wiring: SDA → GPIO 32, SCL → GPIO 33
+- Verify 3.3V power (most SSD1306 modules are 3.3V, not 5V)
+- Verify I2C address (SSD1306 is typically 0x3C, some use 0x3D)
+- Run I2C scanner with `Wire.begin(32, 33)` to detect address
+- Check that GPIO 21/22 are NOT used for the OLED (reserved for SensESP)
 
-### 3. LCD Shows Garbage Characters
+### 3. OLED Shows Garbled Content
 
 **Symptoms:**
-- Random characters or blocks
-- Flickering display
+- Random pixels or partial content
+- Display freezes
 
 **Solutions:**
-- Check I2C pull-up resistors (usually built into backpack)
-- Reduce I2C speed if using long wires
-- Check for loose connections
-- Verify common ground between ESP32 and LCD
+- Check for loose connections on GPIO 32/33
+- Verify stable 3.3V power supply
+- Check for ground loops (common GND between ESP32 and OLED)
 
 ### 4. LiDAR Returns No Data
 
@@ -240,7 +236,7 @@ pio run
 
 void setup() {
   Serial.begin(115200);
-  Wire.begin(21, 22);
+  Wire.begin(32, 33);  // Software I2C on GPIO 32/33
   Serial.println("\nI2C Scanner");
   
   for(byte addr = 1; addr < 127; addr++) {
@@ -266,11 +262,7 @@ void loop() {
 ### Test All Outputs
 ```cpp
 void loop() {
-  // Test LCD
-  lcd.clear();
-  lcd.print("Test 123");
-  
-  // Test Alarm
+  // Test Alarm/Relay
   digitalWrite(ALARM_PIN, HIGH);
   delay(500);
   digitalWrite(ALARM_PIN, LOW);

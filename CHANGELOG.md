@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 - Initial release of Blackwater Tank Level Monitor
 - TFmini-S LiDAR sensor integration for non-contact distance measurement
 - SensESP v3 framework integration for Signal K compatibility
-- 16x2 LCD I2C display showing fill level and volume
+- OLED SSD1306 128x64 display (Software I2C, GPIO 32/33) showing fill level and vertical bar
 - Web-based configuration interface for tank parameters
 - Configurable alarm output with adjustable threshold
 - Signal K outputs for:
@@ -24,14 +24,16 @@ All notable changes to this project will be documented in this file.
 ### Configuration
 - Tank length, width, height (cm)
 - Sensor offset distance (cm)
-- Alarm threshold percentage (0-100%)
+- Alarm ON threshold: 85% (configurable)
+- Alarm OFF threshold: 75% (configurable, hysteresis)
 - All parameters configurable via web UI at `/config`
 
 ### Hardware Support
 - ESP32 boards (tested on Wemos D1 Mini ESP32)
 - TFmini-S LiDAR sensor (UART, 115200 baud)
-- LCD 16x2 with PCF8574 I2C backpack (address 0x27)
-- Alarm output on GPIO 23
+- OLED SSD1306 128x64 (Software I2C, GPIO 32/33, address 0x3C)
+- Alarm/relay output on GPIO 23 (HW-482, active-high)
+- Emergency input on GPIO 19 (active-LOW, internal pull-up)
 
 ### Documentation
 - Complete README with features and installation
@@ -42,7 +44,7 @@ All notable changes to this project will be documented in this file.
 
 ### Dependencies
 - SensESP ^3.2.0
-- LiquidCrystal_PCF8574 ^2.2.0
+- U8g2 (OLED driver)
 - ArduinoJson ^7.0.0
 - ESP32 Arduino framework
 

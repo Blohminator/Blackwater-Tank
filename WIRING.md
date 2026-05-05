@@ -13,12 +13,11 @@
     LiDAR RX ───────┤ GPIO 16 (RX2)   │
     LiDAR TX ───────┤ GPIO 17 (TX2)   │
                     │                 │
-     LCD SDA ───────┤ GPIO 21 (SDA)   │
-     LCD SCL ───────┤ GPIO 22 (SCL)   │
+    OLED SDA ───────┤ GPIO 32         │  (Software I2C)
+    OLED SCL ───────┤ GPIO 33         │  (Software I2C)
                     │                 │
-  Alarm Out ────────┤ GPIO 23         │
-  Alarm In ─────────┤ GPIO 19         │ (with internal pull-up)
-  Relay Out ────────┤ GPIO 18         │
+  Alarm Out ────────┤ GPIO 23         │  (Relay, active-high)
+  Emergency In ─────┤ GPIO 19         │  (with internal pull-up)
                     │                 │
                     └─────────────────┘
 ```
@@ -62,25 +61,25 @@ The TFmini-S has 4 wires:
         └─────────────────┘
 ```
 
-## LCD Display (16x2 I2C)
+## OLED Display (SSD1306 128x64, Software I2C)
 
-The LCD with PCF8574 I2C backpack has 4 connections:
+The SSD1306 OLED has 4 connections:
 
-| LCD Pin | Function | Connect To |
+| OLED Pin | Function | Connect To |
 |---------|----------|------------|
-| VCC | Power (5V) | ESP32 5V |
+| VCC | Power (3.3V) | ESP32 3.3V |
 | GND | Ground | ESP32 GND |
-| SDA | I2C Data | ESP32 GPIO 21 |
-| SCL | I2C Clock | ESP32 GPIO 22 |
+| SDA | I2C Data | ESP32 GPIO 32 |
+| SCL | I2C Clock | ESP32 GPIO 33 |
 
-**I2C Address:**
-- Most common: 0x27
-- Alternative: 0x3F
-- Use I2C scanner if unsure
+**Notes:**
+- GPIO 32/33 are used for Software I2C to avoid conflict with SensESP hardware I2C on GPIO 21/22
+- Most SSD1306 modules run on 3.3V (check your module's datasheet)
+- I2C address is typically 0x3C
 
-## Alarm Output
+## Alarm Output (Relay, GPIO 23)
 
-Connect to GPIO 23:
+Connect to GPIO 23 (HW-482 relay module, active-high):
 
 ### Option 1: LED Indicator
 ```
@@ -103,17 +102,15 @@ GPIO 23 ──── Relay IN
 GND ───────── Relay GND
 ```
 
-## Alarm Input (Emergency Override)
+## Emergency Input (GPIO 19)
 
 Connect to GPIO 19 (has internal pull-up resistor):
 
 ### Option 1: Simple Switch
 ```
 GPIO 19 ──┬── Switch ──┬── GND
-          │            │
-          └────────────┘
 ```
-When switch is CLOSED (connected to GND), emergency mode can activate.
+When switch is CLOSED (connected to GND) AND fill level ≥ alarm threshold, emergency mode activates.
 When switch is OPEN, system operates normally.
 
 ### Option 2: Float Switch
@@ -132,51 +129,12 @@ GPIO 19 ──┬── Relay Contact (NO) ──┬── GND
 ```
 Connect to normally-open relay contact from external alarm system.
 
-## Relay Output (Pump/Valve Control)
+## Relay Output
 
-Connect to GPIO 18:
-
-### Option 1: Relay Module (Recommended)
-```
-GPIO 18 ──── Relay Module IN
-5V ────────── Relay Module VCC
-GND ───────── Relay Module GND
-
-Relay Contacts:
-  COM ──── Pump/Valve Power
-  NO ───── Pump/Valve Device
-  NC ───── (not used)
-```
-
-**Operation:**
-- Normal mode: GPIO 18 = HIGH → Relay ON → Pump/Valve active
-- Emergency mode: GPIO 18 = LOW → Relay OFF → Pump/Valve inactive
-
-### Option 2: Solid State Relay (SSR)
-```
-GPIO 18 ──┬── 1kΩ Resistor ──┬── SSR (+)
-          │                  │
-         GND ──────────────── SSR (-)
-
-SSR Load Contacts:
-  Connect to pump or valve power circuit
-```
-
-### Option 3: MOSFET Driver (for DC loads)
-```
-GPIO 18 ──┬── 10kΩ Resistor ──┬── MOSFET Gate
-          │                   │
-         GND ──────────────────┴── MOSFET Source
-
-MOSFET Drain ──── Load (+)
-Load (-) ──────── Power Supply (-)
-```
-
-**Important Notes:**
-- Use appropriate relay/driver for your load voltage and current
-- Add flyback diode for inductive loads (pumps, solenoids)
-- Ensure proper electrical isolation for high-voltage loads
-- Follow local electrical codes
+The relay is controlled via GPIO 23 (same as alarm output — there is no separate relay pin).
+The HW-482 relay module is active-high:
+- GPIO 23 HIGH → Relay ON (alarm active)
+- GPIO 23 LOW  → Relay OFF (safe state / emergency mode)
 
 ## Power Supply
 
@@ -223,32 +181,32 @@ Buck Converter OUT- (GND) ─── Common GND
     5V      GND             GND          GND        GND
     │        │               │            │          │
 ┌───┴────────┴───┐   ┌───────┴────┐  ┌───┴──────┐   │
-│   ESP32 D1     │   │ TFmini-S   │  │   LCD    │   │
-│     Mini       │   │   LiDAR    │  │  16x2    │   │
-│                │   │            │  │   I2C    │   │
+│   ESP32 D1     │   │ TFmini-S   │  │  OLED    │   │
+│     Mini       │   │   LiDAR    │  │ SSD1306  │   │
+│                │   │            │  │ 128x64   │   │
 │ GPIO16 ────────┼───┤ TX (Green) │  │          │   │
 │ GPIO17 ────────┼───┤ RX (White) │  │          │   │
-│ GPIO21 ────────┼───┼────────────┼──┤ SDA      │   │
-│ GPIO22 ────────┼───┼────────────┼──┤ SCL      │   │
+│ GPIO32 ────────┼───┼────────────┼──┤ SDA      │   │
+│ GPIO33 ────────┼───┼────────────┼──┤ SCL      │   │
 │ GPIO23 ────────┼───┼────────────┼──┼──────────┼───┤
 │                │   │            │  │          │   │
 └────────────────┘   └────────────┘  └──────────┘   │
                                                      │
                                                  ┌───┴────┐
-                                                 │ Alarm  │
-                                                 │ Device │
+                                                 │ Relay  │
+                                                 │ HW-482 │
                                                  └────────┘
 ```
 
 ## Testing Connections
 
-### 1. Test I2C LCD
-Run an I2C scanner sketch to verify LCD address:
+### 1. Test I2C OLED
+Run an I2C scanner sketch to verify OLED address:
 ```cpp
 #include <Wire.h>
 
 void setup() {
-  Wire.begin(21, 22);
+  Wire.begin(32, 33);  // Software I2C on GPIO 32/33
   Serial.begin(115200);
   Serial.println("I2C Scanner");
 }
@@ -299,11 +257,11 @@ void loop() {
 
 ## Troubleshooting
 
-### LCD not working
-- Check I2C address (0x27 or 0x3F)
-- Verify SDA/SCL connections
-- Check contrast potentiometer on I2C backpack
-- Verify 5V power supply
+### OLED not working
+- Check wiring: SDA → GPIO 32, SCL → GPIO 33
+- Verify 3.3V power supply
+- Check I2C address (SSD1306 is typically 0x3C)
+- Run I2C scanner to detect address
 
 ### LiDAR not reading
 - Swap RX/TX connections

@@ -1,13 +1,13 @@
 # Emergency Mode Display Fix
 
 ## Problem
-After emergency mode was deactivated, the LCD display was not updating correctly and showed incorrect level information.
+After emergency mode was deactivated, the OLED display was not updating correctly and showed incorrect level information.
 
 ## Root Cause
 The display update (`update_lcd_display()`) and alarm check (`check_alarm_and_relay()`) were only being called when a valid LiDAR reading was received (`if (distance > 0)`). This caused issues when:
 1. Emergency mode was deactivated
 2. No new LiDAR reading was immediately available
-3. The display remained stuck showing "EMERGENCY MODE"
+3. The display remained stuck showing "NOT-BETRIEB"
 
 ## Solution
 Moved the display update and alarm check **outside** the `if (distance > 0)` condition so they execute on every loop iteration, regardless of whether a new LiDAR reading is available.
@@ -100,7 +100,7 @@ pio device monitor
 
 ## Expected Behavior
 
-- Display updates every 200ms regardless of LiDAR readings
+- Display updates every 100ms regardless of LiDAR readings
 - Emergency mode transitions are immediate and visible
 - No "stuck" display states
 - Smooth transition between normal and emergency modes

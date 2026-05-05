@@ -3,9 +3,9 @@
 ## Current Status
 
 ✅ **Working:**
-- Alarm on GPIO 23 switches correctly at 80%
+- Alarm on GPIO 23 switches correctly at 85% (with hysteresis to 75%)
 - Emergency Mode logic works
-- LCD Display shows correct values
+- OLED Display shows correct values
 - TFmini-S LiDAR reads distance
 
 ❌ **Problem:**

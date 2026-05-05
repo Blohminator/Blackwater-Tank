@@ -18,7 +18,7 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 
 **Transition to EMERGENCY MODE:**
 - When BOTH conditions are met:
-  1. Fill Level ≥ Alarm Threshold (e.g., 80%)
+  1. Fill Level ≥ Alarm ON Threshold (default 85%)
   2. Pin 19 closed (LOW - connected to GND)
 
 ### State: EMERGENCY MODE
@@ -29,7 +29,7 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 - Alarm: ON (HIGH) - Always active
 - Display: Shows "EMERGENCY MODE"
 
-**Behavior during Emergency Mode:**
+**Emergency Mode Behavior:**
 - Remains active AS LONG AS Pin 19 is closed
 - Level changes are IGNORED
 - Even if level falls below threshold, Emergency Mode stays active
@@ -38,8 +38,8 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 **Transition to NORMAL MODE:**
 - ONLY when Pin 19 is opened (HIGH - disconnected from GND)
 - After opening, level is checked:
-  - Level ≥ Threshold → Normal Alarm Mode (Relay OFF, Alarm ON)
-  - Level < Threshold → Normal Mode (Relay ON, Alarm OFF)
+  - Level ≥ Alarm ON threshold (85%) → Normal Alarm Mode (Relay ON, Alarm ON)
+  - Level < Alarm ON threshold → Normal Mode (Relay OFF, Alarm OFF)
 
 ## Flow Diagram
 
@@ -80,12 +80,13 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 ## Relay Logic Summary
 
 **Normal Mode:**
-- Fill level < 80%: Relay ON (normal state)
-- Fill level ≥ 80%: Relay OFF (alarm state)
+- Fill level < 85%: Relay OFF (no alarm)
+- Fill level ≥ 85%: Relay ON (alarm active)
+- Relay turns OFF again when level drops to ≤ 75% (hysteresis)
 
 **Emergency Mode:**
-- Relay ON (returns to safe/normal position)
-- Stays ON regardless of level
+- Relay OFF (safe state)
+- Stays OFF regardless of level
 
 **After Emergency Mode ends:**
 - Check level and set relay accordingly
@@ -94,33 +95,30 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 
 ### Scenario 1: Normal Alarm
 ```
-1. Tank fills to 85% (Threshold: 80%)
+1. Tank fills to 85% (Alarm ON threshold: 85%)
 2. Pin 19 is open
 3. Status: NORMAL MODE
-   - Relay: OFF (alarm state)
-   - Alarm: ON (because 85% ≥ 80%)
-   - Display: "Fill:XXcm 85%" / "Vol:XXXXL"
+   - Relay: ON (alarm active)
+   - Display: "Fuellstand / 85% / Hoehe / XX cm"
 ```
 
 ### Scenario 2: Activate Emergency
 ```
-1. Tank is at 85% (above threshold)
+1. Tank is at 85% (at or above alarm threshold)
 2. Pin 19 is closed (connected to GND)
 3. Status: EMERGENCY MODE activated
-   - Relay: ON (safe state - returns to normal position)
-   - Alarm: ON
-   - Display: "Fill:XXcm 85%" / "EMERGENCY MODE"
-   - Serial: "Emergency ON"
+   - Relay: OFF (safe state)
+   - Display: "NOT-BETRIEB / Fuellstand: 85%"
+   - Serial: "!! EMERGENCY !! Dist=XX cm | Fill=85% | Input=GND"
 ```
 
 ### Scenario 3: Level drops during Emergency Mode
 ```
 1. Emergency Mode is active (Pin 19 closed)
-2. Tank empties to 70% (below threshold)
+2. Tank empties to 70% (below alarm OFF threshold of 75%)
 3. Status: EMERGENCY MODE stays active!
-   - Relay: ON (stays on)
-   - Alarm: ON (stays on)
-   - Display: "Fill:XXcm 70%" / "EMERGENCY MODE"
+   - Relay: OFF (stays off)
+   - Display: "NOT-BETRIEB / Fuellstand: 70%"
    - Pin 19 is still closed → Emergency Mode continues
 ```
 
@@ -129,11 +127,9 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 1. Emergency Mode is active, tank at 85%
 2. Pin 19 is opened (disconnected from GND)
 3. Status: EMERGENCY MODE deactivated
-   - Level check: 85% ≥ 80% → Alarm remains
-   - Relay: OFF (alarm state)
-   - Alarm: ON (due to level)
-   - Display: "Fill:XXcm 85%" / "Vol:XXXXL"
-   - Serial: "Emergency OFF"
+   - Level check: 85% ≥ 85% → Alarm remains
+   - Relay: ON (alarm active)
+   - Display: "Fuellstand / 85% / Hoehe / XX cm"
 ```
 
 ### Scenario 5: End Emergency - Level low
@@ -141,11 +137,9 @@ The Emergency Mode display and function must remain active until Pin 19 is opene
 1. Emergency Mode is active, tank at 70%
 2. Pin 19 is opened
 3. Status: EMERGENCY MODE deactivated
-   - Level check: 70% < 80% → No alarm
-   - Relay: ON (normal state)
-   - Alarm: OFF (level OK)
-   - Display: "Fill:XXcm 70%" / "Vol:XXXXL"
-   - Serial: "Emergency OFF"
+   - Level check: 70% < 75% (alarm OFF threshold) → No alarm
+   - Relay: OFF (no alarm)
+   - Display: "Fuellstand / 70% / Hoehe / XX cm"
 ```
 
 ## Code Logic

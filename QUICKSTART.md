@@ -6,7 +6,7 @@ Get your blackwater tank monitor up and running in 15 minutes!
 
 - ✅ ESP32 board (Wemos D1 Mini ESP32)
 - ✅ TFmini-S LiDAR sensor
-- ✅ 16x2 LCD with I2C backpack
+- ✅ OLED display SSD1306 128x64 (I2C)
 - ✅ USB cable
 - ✅ Jumper wires
 - ✅ 5V power supply (or USB power)
@@ -23,17 +23,19 @@ TFmini-S LiDAR:
   Green (TX)  → ESP32 GPIO 16
   White (RX)  → ESP32 GPIO 17
 
-LCD Display:
-  VCC → ESP32 5V
+OLED Display (SSD1306 128x64, Software I2C):
+  VCC → ESP32 3.3V
   GND → ESP32 GND
-  SDA → ESP32 GPIO 21
-  SCL → ESP32 GPIO 22
+  SDA → ESP32 GPIO 32
+  SCL → ESP32 GPIO 33
+  (Note: GPIO 32/33 are used instead of the hardware I2C pins
+   GPIO 21/22, which are reserved for SensESP internal use.)
 
 Alarm (Optional):
   LED + Resistor → ESP32 GPIO 23 → GND
 ```
 
-**Quick Check:** Power on and verify LCD backlight turns on.
+**Quick Check:** Power on and verify the OLED shows "Init...".
 
 ## Step 2: Upload Firmware (5 minutes)
 
@@ -55,16 +57,17 @@ Alarm (Optional):
 
 ### First Boot
 
-The LCD should show:
+The OLED should show:
 ```
-Initializing...
-Please wait
+Init...
 ```
 
-Then:
+Then switch to the normal display:
 ```
-SensESP Ready
-TFmini-S LiDAR
+Fuellstand
+0%
+Hoehe
+0 cm
 ```
 
 ## Step 3: Connect to WiFi (3 minutes)
@@ -114,13 +117,16 @@ Re-upload firmware.
 
 ## Step 5: Test It! (1 minute)
 
-### Check LCD Display
+### Check OLED Display
 
 You should see:
 ```
-Fill:XXcm YYY%
-Vol:XXXXXXL
+Fuellstand
+XX%
+Hoehe
+XX cm
 ```
+With a vertical fill bar on the right side.
 
 ### Test LiDAR Reading
 
@@ -186,9 +192,10 @@ If you have a Signal K server:
 
 ## Troubleshooting Quick Fixes
 
-### LCD is blank
-- Adjust contrast screw on I2C backpack
-- Try address 0x3F instead of 0x27
+### OLED is blank
+- Check wiring: SDA → GPIO 32, SCL → GPIO 33
+- Verify 3.3V power (not 5V — most SSD1306 modules are 3.3V)
+- Check I2C address: SSD1306 is typically 0x3C
 
 ### No LiDAR readings
 - **Swap RX/TX wires** (most common!)
@@ -236,7 +243,7 @@ To see debug output:
 
 ## Success Checklist
 
-- [ ] LCD shows fill level and volume
+- [ ] OLED shows fill level and percentage
 - [ ] Values change when sensor distance changes
 - [ ] Web interface accessible
 - [ ] Tank dimensions configured correctly

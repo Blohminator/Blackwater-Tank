@@ -115,16 +115,15 @@ Historical fix documentation:
 ### Hardware Components
 - ESP32 (Wemos D1 Mini)
 - TFmini-S LiDAR sensor (UART)
-- 16x2 LCD with I2C backpack
-- Alarm output (GPIO 23)
-- Emergency input (GPIO 19)
-- Relay output (GPIO 18)
+- OLED SSD1306 128x64 (Software I2C, GPIO 32/33)
+- Alarm/relay output (GPIO 23, HW-482 active-high)
+- Emergency input (GPIO 19, active-LOW)
 
 ### Software Stack
 - PlatformIO build system
 - Arduino framework
 - SensESP v3.2.0 (Signal K integration)
-- LiquidCrystal_PCF8574 (LCD driver)
+- U8g2 (OLED driver)
 - ArduinoJson v7.0.0
 
 ### Signal K Integration
@@ -146,31 +145,28 @@ int alarm_threshold_percent = 80;
 
 ### GPIO Pin Assignments
 ```cpp
-#define RXD2 16              // LiDAR RX
-#define TXD2 17              // LiDAR TX
-#define ALARM_PIN 23         // Alarm output
-#define ALARM_INPUT_PIN 19   // Emergency input
-#define RELAY_PIN 18         // Relay control
-#define LCD_I2C_ADDR 0x27    // LCD address
-#define I2C_SDA 21           // I2C data
-#define I2C_SCL 22           // I2C clock
+#define TF_RX         16   // LiDAR RX
+#define TF_TX         17   // LiDAR TX
+#define ALARM_PIN     23   // Relay output (HW-482, active-high)
+#define EMERGENCY_PIN 19   // Emergency input (active-LOW)
+#define OLED_SDA      32   // OLED Software I2C data
+#define OLED_SCL      33   // OLED Software I2C clock
 ```
 
 ## Current Status
 
 ✅ **Working:**
 - TFmini-S LiDAR distance measurement
-- LCD display with real-time updates
+- OLED SSD1306 display with real-time updates
 - Signal K integration
-- Alarm output at 80% threshold
-- Relay output switching
+- Alarm relay at 85% threshold (with hysteresis to 75%)
 - Emergency mode state machine
 
 ✅ **Tested:**
 - Normal mode operation
 - Alarm threshold triggering
 - Relay switching in normal and emergency modes
-- Display updates
+- Display updates in both modes
 - Emergency mode activation/deactivation
 
 ## Support Resources

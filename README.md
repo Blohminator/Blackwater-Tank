@@ -12,7 +12,7 @@ This project provides a complete solution for monitoring blackwater tank levels 
 
 - **TFmini-S LiDAR sensor** for non-contact distance measurement
 - **Signal K integration** via SensESP v3 framework
-- **SH1106 OLED display** (128x64 I2C) showing fill level, volume and progress bar
+- **SSD1306 OLED display** (128x64, Software I2C on GPIO 32/33) showing fill level and progress bar
 - **Configurable alarm** with adjustable threshold
 - **Emergency operation mode** with manual override
 - **Relay control** for electric toilet system automation
@@ -25,7 +25,7 @@ This project provides a complete solution for monitoring blackwater tank levels 
 
 - **ESP32 board** - Wemos D1 Mini ESP32 or compatible (ESP32-WROOM-32)
 - **TFmini-S LiDAR sensor** - Non-contact distance measurement (30-1200cm range)
-- **SH1106 OLED display** - 128x64 pixels, I2C (address 0x3C)
+- **SSD1306 OLED display** - 128x64 pixels, Software I2C on GPIO 32/33 (address 0x3C)
 - **Relay module** - For controlling electric toilet or pump (optional)
 - **Alarm device** - LED, buzzer, or external alarm system (optional)
 - **5V power supply** - Minimum 2A recommended for stable operation
@@ -37,11 +37,10 @@ This project provides a complete solution for monitoring blackwater tank levels 
 |-----------|-----------|-------------|
 | LiDAR RX | GPIO 16 | Receives data from TFmini-S TX |
 | LiDAR TX | GPIO 17 | Sends commands to TFmini-S RX |
-| OLED SDA | GPIO 21 | I2C data line |
-| OLED SCL | GPIO 22 | I2C clock line |
-| Alarm Output | GPIO 23 | Alarm output (HIGH when threshold exceeded) |
-| Alarm Input | GPIO 19 | Emergency alarm input (active LOW, internal pull-up) |
-| Relay Output | GPIO 18 | Relay control (HIGH=ON in normal mode, LOW=OFF in emergency) |
+| OLED SDA | GPIO 32 | Software I2C data line |
+| OLED SCL | GPIO 33 | Software I2C clock line |
+| Alarm Output | GPIO 23 | Relay output (HIGH = relay on, HW-482 active-high) |
+| Emergency Input | GPIO 19 | Emergency input (active LOW, internal pull-up) |
 
 ## Signal K Paths
 
@@ -125,21 +124,19 @@ builder
   .get_app();
 ```
 
-## LCD Display
+## OLED Display
 
-The LCD shows real-time information in two modes:
+The OLED shows real-time information in two modes:
 
 ### Normal Mode
-- Large fill percentage (e.g. `75%`)
+- Fill percentage (e.g. `75%`)
 - Fill height in centimeters
-- Current volume in liters
-- Progress bar at the bottom of the screen
+- Vertical fill bar on the right side
 
 ### Emergency Mode
-- `!! EMERGENCY MODE !!` warning header
-- Large fill percentage
-- Fill height in centimeters
-- Progress bar at the bottom of the screen
+- `NOT-BETRIEB` warning
+- Fill percentage
+- Vertical fill bar on the right side
 
 ## Emergency Operation
 
@@ -152,17 +149,16 @@ The system includes an emergency override feature:
 
 **Emergency Mode Activation:**
 When BOTH conditions are met:
-1. Fill level exceeds alarm threshold (default 80%)
-2. Alarm input (GPIO 19) is closed (connected to GND)
+1. Fill level reaches or exceeds alarm threshold (default 85%)
+2. Emergency input (GPIO 19) is pulled to GND
 
 **Emergency Mode Behavior:**
-- Relay output: LOW (OFF) - switches to normal/safe state
-- Alarm output: HIGH (active)
-- Display: Shows "EMERGENCY MODE" message
+- Relay output: LOW (OFF) — safe state
+- Display: Shows "NOT-BETRIEB" message
 - Serial: Logs emergency activation
 
 **Exit Emergency Mode:**
-When the alarm input (GPIO 19) is opened (disconnected), the system automatically returns to normal operation.
+When the emergency input (GPIO 19) is opened (disconnected from GND), the system automatically returns to normal operation.
 
 ## TFmini-S LiDAR
 
@@ -208,7 +204,7 @@ Additional mounting guidelines:
 
 ### LCD not displaying
 - Verify I2C address (default 0x3C, some use 0x3D)
-- Check I2C wiring (SDA/SCL)
+- Check wiring: SDA → GPIO 32, SCL → GPIO 33
 - Test with I2C scanner sketch
 
 ### Signal K not connecting
@@ -236,7 +232,7 @@ The system operates on a 200ms update cycle:
 ### Communication Protocols
 
 - **UART:** TFmini-S LiDAR (115200 baud, 8N1)
-- **I2C:** LCD display (100kHz, address 0x27)
+- **I2C:** OLED display (Software I2C, GPIO 32/33, address 0x3C)
 - **WiFi:** 802.11 b/g/n (2.4GHz)
 - **Signal K:** WebSocket over HTTP (default port 3000)
 
@@ -258,8 +254,7 @@ The system operates on a 200ms update cycle:
 ### Dependencies
 
 - [SensESP](https://github.com/SignalK/SensESP) v3.2.0+
-- [Adafruit SH110X](https://github.com/adafruit/Adafruit_SH110x) v2.1.10+
-- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) v1.11.9+
+- [U8g2](https://github.com/olikraus/u8g2) (OLED driver)
 - [ArduinoJson](https://arduinojson.org/) v7.0.0+
 
 ## Contributing
